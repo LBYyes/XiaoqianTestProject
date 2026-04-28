@@ -1,0 +1,633 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>收益管理 - 奇趣XR酒店管理平台</title>
+  <link rel="stylesheet" href="../assets/css/theme.css?v=76">
+  <link rel="stylesheet" href="../assets/css/common.css?v=76">
+  <link rel="stylesheet" href="../assets/css/pages/ops.css?v=76">
+</head>
+<body>
+  <div class="app-wrapper">
+    <div id="header"></div>
+    <main class="page-content page-content--with-header">
+
+      <div class="rev-period-bar">
+        <button class="btn btn--ghost btn--sm" id="monthPrevBtn" type="button">‹</button>
+        <div class="rev-period-bar__label" id="monthLabel"></div>
+        <button class="btn btn--ghost btn--sm" id="monthNextBtn" type="button">›</button>
+      </div>
+
+      <div class="rev-toolbar">
+        <button type="button" class="ops-multi-btn" id="opsFilterBtn">
+          <span class="ops-multi-btn__label" id="opsFilterLabel">运营（全部）</span>
+          <span class="ops-multi-btn__arrow">▼</span>
+        </button>
+        <button type="button" class="ops-multi-btn" id="salesFilterBtn">
+          <span class="ops-multi-btn__label" id="salesFilterLabel">销售（全部）</span>
+          <span class="ops-multi-btn__arrow">▼</span>
+        </button>
+        <button type="button" class="ops-multi-btn" id="provinceFilterBtn">
+          <span class="ops-multi-btn__label" id="provinceFilterLabel">省份（全部）</span>
+          <span class="ops-multi-btn__arrow">▼</span>
+        </button>
+      </div>
+
+      <div class="rev-search-row">
+        <div class="search-bar">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+          <input type="text" id="searchInput" placeholder="搜索酒店名称">
+        </div>
+        <label class="rev-toggle">
+          <input type="checkbox" id="hideUnlaunchedToggle" checked>
+          <span>隐藏未上线</span>
+        </label>
+      </div>
+
+      <div class="rev-summary-bar" id="summaryBar"></div>
+
+      <div class="rev-sort-row">
+        <select class="form-select form-select--sm" id="sortFilter">
+          <option value="settledNights">按结算间夜</option>
+          <option value="settlementAmount">按总金额</option>
+          <option value="occupancyNights">按占房</option>
+          <option value="occupancyRate">按入住率</option>
+          <option value="avgRevenue">按单间收益</option>
+        </select>
+        <button class="rev-sort-row__order-btn" type="button" id="sortOrderBtn" title="切换升降序">↓</button>
+        <button class="btn btn--outline btn--sm" type="button" id="expandAllBtn">全部展开</button>
+      </div>
+
+      <div id="listRoot"></div>
+    </main>
+
+    <div class="ops-popup" id="multiPopup" style="display:none;">
+      <div class="ops-popup__mask" id="multiPopupMask"></div>
+      <div class="ops-popup__sheet">
+        <div class="ops-popup__head">
+          <div class="ops-popup__title" id="multiPopupTitle">筛选</div>
+          <button type="button" class="ops-popup__close" id="multiPopupClose">×</button>
+        </div>
+        <div class="ops-popup__body" id="multiPopupBody"></div>
+        <div class="ops-popup__actions">
+          <button type="button" class="btn btn--outline btn--block" id="multiPopupSelectAll">全选</button>
+          <button type="button" class="btn btn--outline btn--block" id="multiPopupClear">清空</button>
+          <button type="button" class="btn btn--primary btn--block" id="multiPopupConfirm">确定</button>
+        </div>
+      </div>
+    </div>
+    <div class="rev-tip-pop" id="occupancyTipPop">
+      <div class="rev-tip-pop__mask" id="occupancyTipMask"></div>
+      <div class="rev-tip-pop__panel">
+        <div class="rev-tip-pop__title">占房超合同提醒</div>
+        <div class="rev-tip-pop__line">合同约定占房：<strong id="tipContractLimit">0</strong></div>
+        <div class="rev-tip-pop__line">当前占房：<strong id="tipCurrentOccupancy">0</strong></div>
+        <div class="rev-tip-pop__line">超出：<strong id="tipExceededBy">0</strong></div>
+      </div>
+    </div>
+    <div class="rev-tip-pop" id="weeklyHintPop">
+      <div class="rev-tip-pop__mask" id="weeklyHintMask"></div>
+      <div class="rev-tip-pop__panel">
+        <div class="rev-tip-pop__title">周累计说明</div>
+        <div class="rev-tip-pop__line">周维度数据为运营每周与酒店核对，可能和月报对账数据存在出入。</div>
+      </div>
+    </div>
+  </div>
+
+  <script src="../assets/js/mock/operations.js?v=76"></script>
+  <script src="../assets/js/mock/revenue.js?v=76"></script>
+  <script src="../assets/js/utils.js?v=76"></script>
+  <script src="../assets/js/components/header.js?v=76"></script>
+  <script>
+    const role = (Utils.getUrlParam('role') || 'middle').trim();
+
+    Header.render('#header', {
+      title: '收益管理',
+      showBack: true,
+      backHref: `ops-board.html?role=${encodeURIComponent(role)}&ops=all`
+    });
+
+    // —— 状态 ——
+    const MIN_MONTH = REVENUE_MONTH_KEYS[0];
+    const MAX_MONTH = REVENUE_MONTH_KEYS[REVENUE_MONTH_KEYS.length - 1];
+    function clampMonth(m) {
+      if (!/^\d{4}-\d{2}$/.test(m || '')) return MAX_MONTH;
+      if (m < MIN_MONTH) return MIN_MONTH;
+      if (m > MAX_MONTH) return MAX_MONTH;
+      return m;
+    }
+    function shiftMonth(m, step) {
+      const [y, mm] = m.split('-').map(Number);
+      const d = new Date(y, mm - 1 + step, 1);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    }
+    function parseListParam(key) {
+      const raw = (Utils.getUrlParam(key) || '').trim();
+      if (!raw) return [];
+      return raw.split(',').map((s) => s.trim()).filter(Boolean);
+    }
+
+    let selectedMonth = clampMonth((Utils.getUrlParam('month') || MAX_MONTH).trim());
+    let opsFilter = parseListParam('opsOwner');
+    let salesFilter = parseListParam('sales');
+    let provinceFilter = parseListParam('province');
+    let keyword = (Utils.getUrlParam('keyword') || '').trim();
+    let hideUnlaunched = (Utils.getUrlParam('hideUnlaunched') || '1') !== '0';
+    let sortFilter = (Utils.getUrlParam('sort') || 'settledNights').trim();
+    if (!['settledNights', 'settlementAmount', 'occupancyNights', 'occupancyRate', 'avgRevenue'].includes(sortFilter)) sortFilter = 'settledNights';
+    let sortOrder = (Utils.getUrlParam('order') || 'desc').trim() === 'asc' ? 'asc' : 'desc';
+    const expandedHotelIds = new Set();
+    let renderedHotelIds = [];
+
+    document.getElementById('searchInput').value = keyword;
+    document.getElementById('hideUnlaunchedToggle').checked = hideUnlaunched;
+    document.getElementById('sortFilter').value = sortFilter;
+
+    // —— 多选弹窗（复用 ops-ota-list 同款）——
+    const popupEl = document.getElementById('multiPopup');
+    const popupTitleEl = document.getElementById('multiPopupTitle');
+    const popupBodyEl = document.getElementById('multiPopupBody');
+    const popupSelectAllBtn = document.getElementById('multiPopupSelectAll');
+    const popupClearBtn = document.getElementById('multiPopupClear');
+    const popupConfirmBtn = document.getElementById('multiPopupConfirm');
+    const popupMaskEl = document.getElementById('multiPopupMask');
+    const popupCloseBtn = document.getElementById('multiPopupClose');
+    const occupancyTipPop = document.getElementById('occupancyTipPop');
+    const occupancyTipMask = document.getElementById('occupancyTipMask');
+    const tipContractLimitEl = document.getElementById('tipContractLimit');
+    const tipCurrentOccupancyEl = document.getElementById('tipCurrentOccupancy');
+    const tipExceededByEl = document.getElementById('tipExceededBy');
+    let popupContext = null;
+
+    function isPopupAllSelected() {
+      if (!popupContext || !popupContext.options.length) return false;
+      return popupContext.options.every((opt) => popupContext.selected.has(opt));
+    }
+    function updatePopupSelectAllBtn() {
+      if (!popupContext) return;
+      popupSelectAllBtn.disabled = !popupContext.options.length;
+      popupSelectAllBtn.textContent = isPopupAllSelected() ? '取消全选' : '全选';
+    }
+    function renderPopupBody() {
+      if (!popupContext) return;
+      popupBodyEl.innerHTML = popupContext.options.map((opt) => `
+        <label class="ops-check-item">
+          <input type="checkbox" value="${opt}" ${popupContext.selected.has(opt) ? 'checked' : ''}>
+          <span class="ops-check-item__label">${opt}</span>
+        </label>
+      `).join('') || '<div class="fin-empty-hint">暂无可选项</div>';
+      updatePopupSelectAllBtn();
+    }
+    function openMultiPopup(kind, title, options, currentSelected) {
+      popupContext = {
+        kind,
+        options: options.slice(),
+        selected: new Set(currentSelected.filter((x) => options.includes(x)))
+      };
+      popupTitleEl.textContent = title;
+      renderPopupBody();
+      popupEl.style.display = 'flex';
+    }
+    function closeMultiPopup() {
+      popupEl.style.display = 'none';
+      popupContext = null;
+    }
+    popupBodyEl.addEventListener('change', (e) => {
+      const target = e.target;
+      if (!target || target.tagName !== 'INPUT' || !popupContext) return;
+      if (target.checked) popupContext.selected.add(target.value);
+      else popupContext.selected.delete(target.value);
+      updatePopupSelectAllBtn();
+    });
+    popupSelectAllBtn.addEventListener('click', () => {
+      if (!popupContext) return;
+      if (isPopupAllSelected()) popupContext.selected.clear();
+      else popupContext.selected = new Set(popupContext.options);
+      renderPopupBody();
+    });
+    popupClearBtn.addEventListener('click', () => {
+      if (!popupContext) return;
+      popupContext.selected.clear();
+      renderPopupBody();
+    });
+    popupConfirmBtn.addEventListener('click', () => {
+      if (!popupContext) return;
+      const arr = [...popupContext.selected];
+      if (popupContext.kind === 'ops') opsFilter = arr;
+      else if (popupContext.kind === 'sales') salesFilter = arr;
+      else if (popupContext.kind === 'province') provinceFilter = arr;
+      closeMultiPopup();
+      render();
+    });
+    popupMaskEl.addEventListener('click', closeMultiPopup);
+    popupCloseBtn.addEventListener('click', closeMultiPopup);
+
+    // —— 工具：入住率色阶 ≥40 绿 / 20-40 普通 / <20 橙 ——
+    function occupancyColorClass(rate) {
+      const pct = (Number(rate) || 0) * 100;
+      if (pct >= 40) return 'rev-kpi--occu-good';
+      if (pct < 20) return 'rev-kpi--occu-bad';
+      return '';
+    }
+
+    function fmtNum(n) {
+      const v = Math.round(Number(n) || 0);
+      return v.toLocaleString('zh-CN');
+    }
+    function fmtWeekRange(startDate, endDate) {
+      const toMd = (s) => {
+        const str = String(s || '');
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+        return `${str.slice(5, 7)}/${str.slice(8, 10)}`;
+      };
+      return `${toMd(startDate)}-${toMd(endDate)}`;
+    }
+    function diffClass(diff) {
+      const v = Number(diff) || 0;
+      if (v > 0) return 'rev-detail-summary__value--diff-pos';
+      if (v < 0) return 'rev-detail-summary__value--diff-neg';
+      return 'rev-detail-summary__value--diff-zero';
+    }
+    function diffSign(diff) {
+      const v = Number(diff) || 0;
+      if (v > 0) return `+${fmtNum(v)}`;
+      if (v < 0) return `-${fmtNum(Math.abs(v))}`;
+      return '0';
+    }
+    function openOccupancyTip(limit, current, exceededBy) {
+      tipContractLimitEl.textContent = fmtNum(limit);
+      tipCurrentOccupancyEl.textContent = fmtNum(current);
+      tipExceededByEl.textContent = `+${fmtNum(exceededBy)}`;
+      occupancyTipPop.classList.add('is-open');
+      document.body.style.overflow = 'hidden';
+    }
+    function closeOccupancyTip() {
+      occupancyTipPop.classList.remove('is-open');
+      document.body.style.overflow = '';
+    }
+
+    function render() {
+      // 月份按钮置灰
+      document.getElementById('monthLabel').textContent = selectedMonth;
+      document.getElementById('monthPrevBtn').disabled = selectedMonth <= MIN_MONTH;
+      document.getElementById('monthNextBtn').disabled = selectedMonth >= MAX_MONTH;
+
+      const hotels = Utils.getRevenueHotels();
+
+      // 关键词过滤
+      const k = keyword.toLowerCase();
+      const keywordFiltered = hotels.filter((h) => !k || (h.hotelName || '').toLowerCase().includes(k));
+
+      // 三个多选下拉的选项 = 关键词过滤后的酒店里出现过的值
+      const opsOptions = [...new Set(keywordFiltered.map((h) => h.ownerOps).filter(Boolean))].sort();
+      const salesOptions = [...new Set(keywordFiltered.map((h) => h.ownerSales).filter(Boolean))].sort();
+      const provinceOptions = [...new Set(keywordFiltered.map((h) => h.province).filter(Boolean))].sort();
+
+      // 清理失效的选中项
+      opsFilter = opsFilter.filter((x) => opsOptions.includes(x));
+      salesFilter = salesFilter.filter((x) => salesOptions.includes(x));
+      provinceFilter = provinceFilter.filter((x) => provinceOptions.includes(x));
+
+      function multiLabel(prefix, sel, total) {
+        if (!sel.length || sel.length === total) return `${prefix}（全部）`;
+        if (sel.length === 1) return `${prefix}：${sel[0]}`;
+        return `${prefix}：${sel.length}项`;
+      }
+      document.getElementById('opsFilterLabel').textContent = multiLabel('运营', opsFilter, opsOptions.length);
+      document.getElementById('salesFilterLabel').textContent = multiLabel('销售', salesFilter, salesOptions.length);
+      document.getElementById('provinceFilterLabel').textContent = multiLabel('省份', provinceFilter, provinceOptions.length);
+
+      // 应用多选过滤
+      const filtered = keywordFiltered.filter((h) => {
+        const byOps = !opsFilter.length || opsFilter.includes(h.ownerOps);
+        const bySales = !salesFilter.length || salesFilter.includes(h.ownerSales);
+        const byProvince = !provinceFilter.length || provinceFilter.includes(h.province);
+        return byOps && bySales && byProvince;
+      });
+
+      // 计算指标
+      const enriched = filtered.map((h) => ({
+        hotel: h,
+        view: Utils.calcRevenueMonthlyView(h, selectedMonth)
+      }));
+
+      // 隐藏未上线
+      const visible = hideUnlaunched ? enriched.filter((x) => x.view.isLaunched) : enriched;
+
+      // 排序
+      const sorted = visible.slice().sort((a, b) => {
+        const av = Number(a.view[sortFilter]) || 0;
+        const bv = Number(b.view[sortFilter]) || 0;
+        return sortOrder === 'asc' ? av - bv : bv - av;
+      });
+      renderedHotelIds = sorted.map(({ hotel: h }) => String(h.id));
+      // 筛选变化后，移除不在当前列表中的展开项
+      [...expandedHotelIds].forEach((id) => {
+        if (!renderedHotelIds.includes(String(id))) expandedHotelIds.delete(String(id));
+      });
+
+      // 顶部汇总条
+      const totalNights = sorted.reduce((s, x) => s + x.view.settledNights, 0);
+      const totalAmount = sorted.reduce((s, x) => s + x.view.settlementAmount, 0);
+      const totalOccupancy = sorted.reduce((s, x) => s + x.view.occupancyNights, 0);
+      document.getElementById('summaryBar').innerHTML = `
+        <span class="rev-summary-bar__item">共 <strong>${sorted.length}</strong> 家酒店</span>
+        <span class="rev-summary-bar__sep">｜</span>
+        <span class="rev-summary-bar__item">结算间夜 <strong>${fmtNum(totalNights)}</strong></span>
+        <span class="rev-summary-bar__sep">｜</span>
+        <span class="rev-summary-bar__item">总金额 <strong>¥${fmtNum(totalAmount)}</strong></span>
+        <span class="rev-summary-bar__sep">｜</span>
+        <span class="rev-summary-bar__item">占房 <strong>${fmtNum(totalOccupancy)}</strong></span>
+      `;
+
+      // 排序按钮
+      document.getElementById('sortOrderBtn').textContent = sortOrder === 'asc' ? '↑' : '↓';
+      document.getElementById('sortOrderBtn').title = sortOrder === 'asc' ? '当前升序，点切换为降序' : '当前降序，点切换为升序';
+      const expandAllBtn = document.getElementById('expandAllBtn');
+      const allExpanded = renderedHotelIds.length > 0 && renderedHotelIds.every((id) => expandedHotelIds.has(String(id)));
+      expandAllBtn.textContent = allExpanded ? '全部收起' : '全部展开';
+
+      // 列表
+      const root = document.getElementById('listRoot');
+      if (!sorted.length) {
+        root.innerHTML = `<div class="empty-state"><div class="empty-state__icon">📊</div><div class="empty-state__text">暂无符合条件的酒店${hideUnlaunched ? '（已隐藏未上线，可关闭开关查看）' : ''}</div></div>`;
+        return;
+      }
+      root.innerHTML = sorted.map(({ hotel: h, view }) => {
+        const occuClass = occupancyColorClass(view.occupancyRate);
+        const showOccupancyAlert = view.occupancyExceeded;
+        const hotelId = String(h.id);
+        const expanded = expandedHotelIds.has(hotelId);
+        const weekly = expanded ? Utils.getRevenueWeeklyForHotel(h.id, selectedMonth) : [];
+        const launchedHint = view.isLaunched ? '' : '<span style="color:#ea580c;font-size:11px;margin-left:4px;">(未上线)</span>';
+        const weeklyRowsHtml = weekly.map((w) => {
+          const n = w.nights || {};
+          const ota = (Number(n.ctrip) || 0) + (Number(n.douyin) || 0) + (Number(n.fliggy) || 0) + (Number(n.meituan) || 0);
+          const offlineSub = (Number(n.upgradeCoupon) || 0) + (Number(n.otherOffline) || 0);
+          return `
+            <tr>
+              <td>${fmtWeekRange(w.weekStartDate, w.weekEndDate)}</td>
+              <td>${fmtNum(n.ctrip)}</td>
+              <td>${fmtNum(n.douyin)}</td>
+              <td>${fmtNum(n.fliggy)}</td>
+              <td>${fmtNum(n.meituan)}</td>
+              <td class="rev-week-table__sub">${fmtNum(ota)}</td>
+              <td>${fmtNum(n.upgradeCoupon)}</td>
+              <td>${fmtNum(n.otherOffline)}</td>
+              <td class="rev-week-table__sub-offline">${fmtNum(offlineSub)}</td>
+              <td class="rev-week-table__occu">${fmtNum(n.occupancy)}</td>
+            </tr>
+          `;
+        }).join('');
+        const weeklySums = weekly.reduce((acc, w) => {
+          const n = w.nights || {};
+          acc.ctrip += Number(n.ctrip) || 0;
+          acc.douyin += Number(n.douyin) || 0;
+          acc.fliggy += Number(n.fliggy) || 0;
+          acc.meituan += Number(n.meituan) || 0;
+          acc.ota += (Number(n.ctrip) || 0) + (Number(n.douyin) || 0) + (Number(n.fliggy) || 0) + (Number(n.meituan) || 0);
+          acc.upgradeCoupon += Number(n.upgradeCoupon) || 0;
+          acc.otherOffline += Number(n.otherOffline) || 0;
+          acc.occupancy += Number(n.occupancy) || 0;
+          return acc;
+        }, { ctrip: 0, douyin: 0, fliggy: 0, meituan: 0, ota: 0, upgradeCoupon: 0, otherOffline: 0, occupancy: 0 });
+        weeklySums.offlineSub = weeklySums.upgradeCoupon + weeklySums.otherOffline;
+        weeklySums.totalSell = weeklySums.ota + weeklySums.offlineSub;
+        return `
+          <div class="rev-card ${expanded ? 'is-expanded' : ''}" data-hotel-id="${hotelId}">
+            <div class="rev-card__head">
+              <div class="rev-card__name">${h.hotelName || '-'}${launchedHint}</div>
+              <button type="button" class="rev-card__toggle-btn" data-toggle-weekly data-hotel-id="${hotelId}">
+                ${expanded ? '收起' : '下拉'}
+              </button>
+            </div>
+            <div class="rev-card__meta">
+              ${h.province || '-'} · 运营 ${h.ownerOps || '-'} · 销售 ${h.ownerSales || '-'} · 合作 ${h.cooperationRooms || 0} 间 · 上线 ${h.launchDate || '-'}
+            </div>
+            <div class="rev-card__kpis">
+              <div class="rev-kpi">
+                <div class="rev-kpi__label">结算间夜</div>
+                <div class="rev-kpi__value rev-kpi__value--accent">${fmtNum(view.settledNights)}</div>
+              </div>
+              <div class="rev-kpi ${showOccupancyAlert ? 'rev-kpi--occupancy-alert' : ''}">
+                <div class="rev-kpi__label">
+                  <span class="rev-kpi__label-wrap">
+                    <span>占房</span>
+                    ${showOccupancyAlert ? `<button type="button" class="rev-occupancy-alert-btn" data-occupancy-tip data-contract-limit="${view.contractOccupancyLimit}" data-current-occupancy="${view.occupancyNights}" data-exceeded-by="${view.occupancyExceededBy}" aria-label="查看占房超约定说明">!</button>` : ''}
+                  </span>
+                </div>
+                <div class="rev-kpi__value">${fmtNum(view.occupancyNights)}</div>
+              </div>
+              <div class="rev-kpi ${occuClass}">
+                <div class="rev-kpi__label">入住率</div>
+                <div class="rev-kpi__value">${Utils.formatPercent(view.occupancyRate)}</div>
+              </div>
+              <div class="rev-kpi">
+                <div class="rev-kpi__label">总金额</div>
+                <div class="rev-kpi__value"><span class="rev-kpi__currency">¥</span>${fmtNum(view.settlementAmount)}</div>
+              </div>
+              <div class="rev-kpi">
+                <div class="rev-kpi__label">单间收益</div>
+                <div class="rev-kpi__value"><span class="rev-kpi__currency">¥</span>${fmtNum(view.avgRevenue)}</div>
+              </div>
+            </div>
+            ${expanded ? `
+            <div class="rev-card__weekly">
+              <div class="rev-detail-summary rev-detail-summary--embedded">
+                <div class="rev-detail-summary__row">
+                  <div class="rev-detail-summary__label">月报合计</div>
+                  <div class="rev-detail-summary__values">
+                    <div class="rev-detail-summary__value">结算间夜 <strong>${fmtNum(view.settledNights)}</strong></div>
+                    <div class="rev-detail-summary__value">总金额 <strong>¥${fmtNum(view.settlementAmount)}</strong></div>
+                    <div class="rev-detail-summary__value">占房 <strong>${fmtNum(view.occupancyNights)}</strong></div>
+                  </div>
+                </div>
+                <div class="rev-detail-summary__row">
+                  <div class="rev-detail-summary__label">
+                    <span class="rev-detail-summary__label-wrap">
+                      <span>周累加</span>
+                      <button type="button" class="rev-detail-summary__hint-btn" data-weekly-hint aria-label="周累计说明">?</button>
+                    </span>
+                  </div>
+                  <div class="rev-detail-summary__values">
+                    <div class="rev-detail-summary__value">预估间夜 <strong>${fmtNum(view.weekSumNights)}</strong></div>
+                    <div class="rev-detail-summary__value">预估占房 <strong>${fmtNum(view.weekSumOccupancy)}</strong></div>
+                  </div>
+                </div>
+                <div class="rev-detail-summary__row">
+                  <div class="rev-detail-summary__label">出入</div>
+                  <div class="rev-detail-summary__values">
+                    <div class="rev-detail-summary__value ${diffClass(view.diffNights)}">间夜 ${diffSign(view.diffNights)}</div>
+                    <div class="rev-detail-summary__value ${diffClass(view.diffOccupancy)}">占房 ${diffSign(view.diffOccupancy)}</div>
+                  </div>
+                </div>
+              </div>
+              <div class="rev-week-table-wrap rev-week-table-wrap--embedded">
+                <table class="rev-week-table rev-week-table--embedded rev-week-table--v2">
+                  <colgroup>
+                    <col style="width:17%">
+                    <col style="width:6.5%">
+                    <col style="width:6.5%">
+                    <col style="width:6.5%">
+                    <col style="width:6.5%">
+                    <col style="width:13%">
+                    <col style="width:9%">
+                    <col style="width:13%">
+                    <col style="width:13%">
+                    <col style="width:9%">
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      <th>周次</th>
+                      <th>携程</th>
+                      <th>抖音</th>
+                      <th>飞猪</th>
+                      <th>美团</th>
+                      <th class="rev-week-table__sub">OTA小计</th>
+                      <th>升级券</th>
+                      <th>线下其他</th>
+                      <th class="rev-week-table__sub-offline">线下小计</th>
+                      <th class="rev-week-table__occu">占房</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${weeklyRowsHtml || '<tr><td colspan="10" style="text-align:center;color:#94a3b8;padding:16px;">该月暂无周数据</td></tr>'}
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <td class="rev-week-table__total-cell">
+                        <span class="rev-week-table__total-label">合计</span>
+                        <span class="rev-week-table__total-sub">总销售 <strong>${fmtNum(weeklySums.totalSell)}</strong></span>
+                      </td>
+                      <td>${fmtNum(weeklySums.ctrip)}</td>
+                      <td>${fmtNum(weeklySums.douyin)}</td>
+                      <td>${fmtNum(weeklySums.fliggy)}</td>
+                      <td>${fmtNum(weeklySums.meituan)}</td>
+                      <td class="rev-week-table__sub">${fmtNum(weeklySums.ota)}</td>
+                      <td>${fmtNum(weeklySums.upgradeCoupon)}</td>
+                      <td>${fmtNum(weeklySums.otherOffline)}</td>
+                      <td class="rev-week-table__sub-offline">${fmtNum(weeklySums.offlineSub)}</td>
+                      <td class="rev-week-table__occu">${fmtNum(weeklySums.occupancy)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+            ` : ''}
+          </div>
+        `;
+      }).join('');
+    }
+
+    // —— 事件 ——
+    document.getElementById('monthPrevBtn').addEventListener('click', () => {
+      const next = shiftMonth(selectedMonth, -1);
+      if (next < MIN_MONTH) return;
+      selectedMonth = next;
+      render();
+    });
+    document.getElementById('monthNextBtn').addEventListener('click', () => {
+      const next = shiftMonth(selectedMonth, 1);
+      if (next > MAX_MONTH) return;
+      selectedMonth = next;
+      render();
+    });
+
+    let __searchDebounceTimer = null;
+    document.getElementById('searchInput').addEventListener('input', (e) => {
+      const val = e.target.value.trim();
+      if (__searchDebounceTimer) clearTimeout(__searchDebounceTimer);
+      __searchDebounceTimer = setTimeout(() => {
+        keyword = val;
+        render();
+      }, 200);
+    });
+    document.getElementById('hideUnlaunchedToggle').addEventListener('change', (e) => {
+      hideUnlaunched = e.target.checked;
+      render();
+    });
+    document.getElementById('sortFilter').addEventListener('change', (e) => {
+      sortFilter = e.target.value;
+      render();
+    });
+    document.getElementById('sortOrderBtn').addEventListener('click', () => {
+      sortOrder = sortOrder === 'asc' ? 'desc' : 'asc';
+      render();
+    });
+    document.getElementById('expandAllBtn').addEventListener('click', () => {
+      const allExpanded = renderedHotelIds.length > 0 && renderedHotelIds.every((id) => expandedHotelIds.has(String(id)));
+      if (allExpanded) {
+        expandedHotelIds.clear();
+      } else {
+        renderedHotelIds.forEach((id) => expandedHotelIds.add(String(id)));
+      }
+      render();
+    });
+
+    document.getElementById('opsFilterBtn').addEventListener('click', () => {
+      const hotels = Utils.getRevenueHotels();
+      const k = keyword.toLowerCase();
+      const opsOptions = [...new Set(hotels.filter((h) => !k || (h.hotelName || '').toLowerCase().includes(k)).map((h) => h.ownerOps).filter(Boolean))].sort();
+      openMultiPopup('ops', '运营', opsOptions, opsFilter);
+    });
+    document.getElementById('salesFilterBtn').addEventListener('click', () => {
+      const hotels = Utils.getRevenueHotels();
+      const k = keyword.toLowerCase();
+      const salesOptions = [...new Set(hotels.filter((h) => !k || (h.hotelName || '').toLowerCase().includes(k)).map((h) => h.ownerSales).filter(Boolean))].sort();
+      openMultiPopup('sales', '销售', salesOptions, salesFilter);
+    });
+    document.getElementById('provinceFilterBtn').addEventListener('click', () => {
+      const hotels = Utils.getRevenueHotels();
+      const k = keyword.toLowerCase();
+      const provinceOptions = [...new Set(hotels.filter((h) => !k || (h.hotelName || '').toLowerCase().includes(k)).map((h) => h.province).filter(Boolean))].sort();
+      openMultiPopup('province', '省份', provinceOptions, provinceFilter);
+    });
+    document.getElementById('listRoot').addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-occupancy-tip]');
+      if (btn) {
+        e.preventDefault();
+        e.stopPropagation();
+        openOccupancyTip(btn.dataset.contractLimit, btn.dataset.currentOccupancy, btn.dataset.exceededBy);
+        return;
+      }
+      const hintBtn = e.target.closest('[data-weekly-hint]');
+      if (hintBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        openWeeklyHint();
+        return;
+      }
+      const toggleBtn = e.target.closest('[data-toggle-weekly]');
+      if (!toggleBtn) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const hotelId = String(toggleBtn.dataset.hotelId || '');
+      if (!hotelId) return;
+      if (expandedHotelIds.has(hotelId)) expandedHotelIds.delete(hotelId);
+      else expandedHotelIds.add(hotelId);
+      render();
+    });
+    occupancyTipMask.addEventListener('click', closeOccupancyTip);
+    const weeklyHintPop = document.getElementById('weeklyHintPop');
+    const weeklyHintMask = document.getElementById('weeklyHintMask');
+    function openWeeklyHint() {
+      weeklyHintPop.classList.add('is-open');
+      document.body.style.overflow = 'hidden';
+    }
+    function closeWeeklyHint() {
+      weeklyHintPop.classList.remove('is-open');
+      document.body.style.overflow = '';
+    }
+    weeklyHintMask.addEventListener('click', closeWeeklyHint);
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        closeOccupancyTip();
+        closeWeeklyHint();
+      }
+    });
+
+    render();
+  </script>
+</body>
+</html>

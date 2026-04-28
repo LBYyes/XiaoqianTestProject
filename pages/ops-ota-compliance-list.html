@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>监控达标列表 - 奇趣XR酒店管理平台</title>
+  <link rel="stylesheet" href="../assets/css/theme.css?v=17">
+  <link rel="stylesheet" href="../assets/css/common.css?v=17">
+  <link rel="stylesheet" href="../assets/css/pages/ops.css?v=17">
+</head>
+<body>
+  <div class="app-wrapper">
+    <div id="header"></div>
+    <main class="page-content page-content--with-header">
+      <div class="ops-compliance-tabs" id="modeTabs" style="margin-bottom:var(--spacing-sm);">
+        <button class="ops-compliance-tab" data-mode="uncompliant">监控未达标</button>
+        <button class="ops-compliance-tab" data-mode="compliant">监控达标</button>
+      </div>
+      <div id="listRoot"></div>
+    </main>
+  </div>
+
+  <script src="../assets/js/mock/operations.js?v=17"></script>
+  <script src="../assets/js/utils.js?v=17"></script>
+  <script src="../assets/js/components/header.js?v=17"></script>
+  <script>
+    const WEEK_TARGET_DAYS = 2;
+    const role = (Utils.getUrlParam('role') || 'ops').trim();
+    const isMiddleRole = role === 'middle';
+    const isCrossOpsRole = isMiddleRole;
+    const currentOps = (Utils.getUrlParam('ops') || (isCrossOpsRole ? 'all' : '王莉')).trim();
+    const modeFromUrl = (Utils.getUrlParam('mode') || '').trim();
+    let mode = modeFromUrl === 'compliant' ? 'compliant' : 'uncompliant';
+    const range = (Utils.getUrlParam('range') || 'week').trim();
+    const ref = (Utils.getUrlParam('ref') || '').trim();
+    const view = (Utils.getUrlParam('view') || '').trim();
+    const dashboardBackHref = `ops-ota-dashboard.html?role=${encodeURIComponent(role)}&ops=${encodeURIComponent(currentOps)}${range ? `&range=${encodeURIComponent(range)}` : ''}${ref ? `&ref=${encodeURIComponent(ref)}` : ''}${view ? `&view=${encodeURIComponent(view)}` : ''}`;
+
+    Header.render('#header', {
+      title: '监控达标列表',
+      showBack: true,
+      backHref: dashboardBackHref
+    });
+
+    function toDate(dateStr) {
+      return new Date(`${dateStr}T00:00:00`);
+    }
+
+    function formatDateStr(date) {
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, '0');
+      const d = String(date.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
+
+    function addDays(dateStr, days) {
+      const date = toDate(dateStr);
+      date.setDate(date.getDate() + days);
+      return formatDateStr(date);
+    }
+
+    function getWeekStart(dateStr) {
+      const date = toDate(dateStr);
+      const day = date.getDay();
+      const diff = day === 0 ? 6 : day - 1;
+      date.setDate(date.getDate() - diff);
+      return formatDateStr(date);
+    }
+
+    function getRange() {
+      const base = /^\d{4}-\d{2}-\d{2}$/.test(ref) ? ref : formatDateStr(new Date());
+      if (range === 'day') return { start: base, end: base };
+      if (range === 'week') {
+        const start = getWeekStart(base);
+        return { start, end: addDays(start, 6) };
+      }
+      const date = toDate(base);
+      const start = new Date(date.getFullYear(), date.getMonth(), 1);
+      const end = new Date(date.getFullYear(), date.getMonth() + 1, 0);
+      return { start: formatDateStr(start), end: formatDateStr(end) };
+    }
+
+    function inRange(dateStr, r) {
+      return dateStr >= r.start && dateStr <= r.end;
+    }
+
+    function collectWeekKeys(r) {
+      const keys = [];
+      let cursor = getWeekStart(r.start);
+      const last = getWeekStart(r.end);
+      while (cursor <= last) {
+        keys.push(cursor);
+        cursor = addDays(cursor, 7);
+      }
+      return keys;
+    }
+
+    function summary(hotel, records, r, weekKeys) {
+      const valid = records.filter((x) => x.hotelId === hotel.id && inRange(x.date, r));
+      const dayMap = {};
+      valid.forEach((x) => {
+        if (!dayMap[x.date]) dayMap[x.date] = 1;
+      });
+      const recordedDays = Object.keys(dayMap).length;
+      const weekMap = {};
+      Object.keys(dayMap).forEach((d) => {
+        const wk = getWeekStart(d);
+        weekMap[wk] = (weekMap[wk] || 0) + 1;
+      });
+      const isCompliant = weekKeys.length ? weekKeys.every((wk) => (weekMap[wk] || 0) >= WEEK_TARGET_DAYS) : false;
+      const missingDaysToComply = weekKeys.reduce((sum, wk) => sum + Math.max(0, WEEK_TARGET_DAYS - (weekMap[wk] || 0)), 0);
+      return { recordedDays, isCompliant, missingDaysToComply };
+    }
+
+    function render() {
+      document.querySelectorAll('.ops-compliance-tab').forEach((x) => {
+        x.classList.toggle('ops-compliance-tab--active', x.dataset.mode === mode);
+      });
+      const r = getRange();
+      const weekKeys = collectWeekKeys(r);
+      const hotels = Utils.getOpsHotels().filter((x) => isCrossOpsRole || x.ownerOps === currentOps);
+      const records = Utils.getOpsRecords();
+      const rows = hotels.map((hotel) => ({
+        hotel,
+        st: summary(hotel, records, r, weekKeys)
+      }));
+      const filtered = (mode === 'compliant' ? rows.filter((x) => x.st.isCompliant) : rows.filter((x) => !x.st.isCompliant))
+        .sort((a, b) => mode === 'compliant'
+          ? (b.st.recordedDays - a.st.recordedDays)
+          : (b.st.missingDaysToComply - a.st.missingDaysToComply));
+
+      const root = document.getElementById('listRoot');
+      if (!filtered.length) {
+        root.innerHTML = '<div class="empty-state"><div class="empty-state__text">暂无酒店</div></div>';
+        return;
+      }
+      root.innerHTML = filtered.map((x) => `
+        <a class="ops-hotel-item" href="ops-ota-detail.html?id=${x.hotel.id}&role=${encodeURIComponent(role)}&ops=${encodeURIComponent(currentOps)}&back=dashboard&from=dashboard&range=${encodeURIComponent(range)}&ref=${encodeURIComponent(ref)}${view ? `&view=${encodeURIComponent(view)}` : ''}">
+          <div class="ops-hotel-item__head">
+            <div class="ops-hotel-item__name">${x.hotel.name}</div>
+            <span style="color:var(--text-placeholder);">›</span>
+          </div>
+          <div class="ops-hotel-item__meta">${x.hotel.province} · 监控 ${x.st.recordedDays} 天${mode === 'uncompliant' ? ` · 缺失 ${x.st.missingDaysToComply} 天` : ''}</div>
+        </a>
+      `).join('');
+    }
+
+    document.getElementById('modeTabs').addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-mode]');
+      if (!btn) return;
+      mode = btn.dataset.mode;
+      render();
+    });
+
+    render();
+  </script>
+</body>
+</html>

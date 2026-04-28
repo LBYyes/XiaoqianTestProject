@@ -1,0 +1,267 @@
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const out = path.join(__dirname, '..', 'pages', 'sales-board.html');
+const html = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>销售看板 - 奇趣庄园</title>
+  <link rel="stylesheet" href="../assets/css/theme.css?v=6">
+  <link rel="stylesheet" href="../assets/css/common.css?v=6">
+  <link rel="stylesheet" href="../assets/css/pages/sales-board.css?v=6">
+</head>
+<body>
+  <div class="app-wrapper">
+    <div id="header"></div>
+    <main class="page-content">
+
+      <!-- 时间筛选 -->
+      <div class="time-filter-bar">
+        <div class="time-tabs" id="timeTabs">
+          <button class="time-tab time-tab--active" data-range="all">全部</button>
+          <button class="time-tab" data-range="today">今日</button>
+          <button class="time-tab" data-range="week">本周</button>
+          <button class="time-tab" data-range="month">本月</button>
+          <button class="time-tab" data-range="custom">自定义</button>
+        </div>
+        <div class="custom-date-row" id="customDateRow" style="display:none;">
+          <input type="date" class="custom-date-input" id="dateFrom" placeholder="开始日期">
+          <span class="custom-date-sep">至</span>
+          <input type="date" class="custom-date-input" id="dateTo" placeholder="结束日期">
+        </div>
+      </div>
+
+      <!-- KPI 卡片 -->
+      <div class="kpi-row">
+        <div class="kpi-card">
+          <div class="kpi-card__num" id="kpiActive">0</div>
+          <div class="kpi-card__label">活跃酒店</div>
+          <div class="kpi-card__sub">有跟进更新</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-card__num" id="kpiNew">0</div>
+          <div class="kpi-card__label">新增建档</div>
+          <div class="kpi-card__sub">新建立档数</div>
+        </div>
+      </div>
+
+      <!-- 签约转化漏斗 -->
+      <div class="card">
+        <div class="card__title">签约转化漏斗 <span class="card__title-sub" id="funnelScope">· 全量</span></div>
+        <div class="funnel-row" id="funnelRow"></div>
+        <div class="funnel-rates" id="funnelRates"></div>
+      </div>
+
+      <!-- 意向筛选结果分布 -->
+      <div class="card mt-lg">
+        <div class="card__title">意向筛选结果</div>
+        <div id="screeningDist"></div>
+      </div>
+
+      <!-- 最近跟进 -->
+      <div class="card mt-lg">
+        <div class="card__title">
+          最近跟进
+          <a href="hotel-list.html" class="text-primary" style="font-size:var(--font-sm);font-weight:400;">查看全部</a>
+        </div>
+        <div id="recentList"></div>
+      </div>
+    </main>
+
+    <div id="tabbar"></div>
+  </div>
+
+  <script src="../assets/js/mock/hotels.js?v=5"></script>
+  <script src="../assets/js/utils.js?v=4"></script>
+  <script src="../assets/js/components/header.js?v=4"></script>
+  <script src="../assets/js/components/tabbar.js?v=4"></script>
+  <script>
+    Header.render('#header', { title: '奇趣庄园', showBack: false });
+    TabBar.render('#tabbar', { active: 'board' });
+
+    let currentRange = 'all';
+
+    function getDateRange(range) {
+      const now = new Date();
+      const todayStr = now.toISOString().split('T')[0];
+      const today = new Date(todayStr);
+
+      if (range === 'today') {
+        return { start: todayStr, end: todayStr };
+      }
+      if (range === 'week') {
+        const day = today.getDay();
+        const diff = day === 0 ? 6 : day - 1;
+        const weekStart = new Date(today.getTime() - diff * 86400000);
+        return { start: weekStart.toISOString().split('T')[0], end: todayStr };
+      }
+      if (range === 'month') {
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        return { start: monthStart.toISOString().split('T')[0], end: todayStr };
+      }
+      if (range === 'custom') {
+        const from = document.getElementById('dateFrom').value;
+        const to = document.getElementById('dateTo').value;
+        if (from && to) return { start: from, end: to };
+        return null;
+      }
+      return null;
+    }
+
+    function inRange(dateStr, range) {
+      if (!range) return true;
+      return dateStr >= range.start && dateStr <= range.end;
+    }
+
+    function render() {
+      const allHotels = Utils.getAllHotels();
+      const range = getDateRange(currentRange);
+
+      const activeHotels = range
+        ? allHotels.filter(h => inRange(h.updatedAt, range))
+        : allHotels;
+
+      const newHotels = range
+        ? allHotels.filter(h => h.createdAt && inRange(h.createdAt, range))
+        : allHotels;
+
+      document.getElementById('kpiActive').textContent = activeHotels.length + '家';
+      document.getElementById('kpiNew').textContent = newHotels.length + '家';
+
+      const funnelBase = activeHotels;
+      document.getElementById('funnelScope').textContent = range ? '· 活跃酒店' : '· 全量';
+
+      renderFunnel(funnelBase);
+      renderScreeningDist(funnelBase);
+      renderRecent(allHotels);
+    }
+
+    function renderFunnel(hotels) {
+      const prog = hotels.map(h => Utils.getHotelProgress(h));
+      const s1 = prog.filter(p => p.screening).length;
+      const s2 = prog.filter(p => p.pitch).length;
+      const s3 = prog.filter(p => p.negotiate).length;
+      const s4 = prog.filter(p => p.signed).length;
+
+      const steps = [
+        { label: '意向筛选', count: s1, color: '#3B82F6' },
+        { label: '产品讲解', count: s2, color: '#F59E0B' },
+        { label: '合作模式', count: s3, color: '#8B5CF6' },
+        { label: '已签约',   count: s4, color: '#22C55E' }
+      ];
+
+      document.getElementById('funnelRow').innerHTML = steps.map((s, i) => \`
+        <div class="funnel-step">
+          <div class="funnel-step__bar-wrap">
+            <div class="funnel-step__bar" style="background:\${s.color};"></div>
+          </div>
+          <div class="funnel-step__count" style="color:\${s.color};">\${s.count}</div>
+          <div class="funnel-step__label">\${s.label}</div>
+        </div>
+        \${i < steps.length - 1 ? '<div class="funnel-arrow">→</div>' : ''}
+      \`).join('');
+
+      const rates = [
+        s1 > 0 ? Math.round(s2 / s1 * 100) : 0,
+        s2 > 0 ? Math.round(s3 / s2 * 100) : 0,
+        s3 > 0 ? Math.round(s4 / s3 * 100) : 0
+      ];
+      const rateLabels = ['筛选→讲解', '讲解→谈判', '谈判→签约'];
+      document.getElementById('funnelRates').innerHTML = rates.map((r, i) => \`
+        <div class="funnel-rate-item">
+          <span class="funnel-rate-item__label">\${rateLabels[i]}</span>
+          <span class="funnel-rate-item__val">\${r}%</span>
+        </div>
+      \`).join('');
+    }
+
+    function renderScreeningDist(hotels) {
+      const withScreen = hotels.filter(h => h.stageData?.screening?.result);
+      const total = withScreen.length;
+
+      if (total === 0) {
+        document.getElementById('screeningDist').innerHTML = '<div style="text-align:center;color:var(--text-placeholder);font-size:var(--font-sm);padding:16px 0;">暂无筛选数据</div>';
+        return;
+      }
+
+      const groups = { qualified: 0, nurture: 0, invalid: 0 };
+      withScreen.forEach(h => {
+        const r = h.stageData.screening.result;
+        if (r === 'qualified') groups.qualified++;
+        else if (r === 'nurture') groups.nurture++;
+        else groups.invalid++;
+      });
+
+      const items = [
+        { key: 'qualified', label: '合格客户', count: groups.qualified, color: 'var(--color-success)' },
+        { key: 'nurture',   label: '培育客户', count: groups.nurture,   color: 'var(--color-primary)' },
+        { key: 'invalid',   label: '无效客户', count: groups.invalid,   color: 'var(--text-placeholder)' }
+      ];
+
+      document.getElementById('screeningDist').innerHTML = items.map(item => {
+        const pct = Math.round(item.count / total * 100);
+        return \`
+          <div class="dist-row">
+            <div class="dist-row__label">\${item.label}</div>
+            <div class="dist-row__bar-wrap">
+              <div class="dist-row__bar" style="width:\${pct}%;background:\${item.color};"></div>
+            </div>
+            <div class="dist-row__count">\${item.count}家</div>
+            <div class="dist-row__pct" style="color:\${item.color};">\${pct}%</div>
+          </div>
+        \`;
+      }).join('');
+    }
+
+    function renderRecent(allHotels) {
+      const recent = [...allHotels].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 5);
+      const el = document.getElementById('recentList');
+      if (!recent.length) {
+        el.innerHTML = '<div class="empty-state"><div class="empty-state__icon">📋</div><div class="empty-state__text">暂无跟进记录</div></div>';
+        return;
+      }
+      el.innerHTML = recent.map(h => {
+        const prog = Utils.getHotelProgress(h);
+        const scoreTag = prog.score
+          ? \`<span class="tag tag--\${Utils.screenResultTag(prog.result)}">\${prog.score}分</span>\`
+          : '';
+        const visitTag = prog.hasVisit ? '<span style="font-size:11px;margin-right:2px;">📸</span>' : '';
+        const signedTag = prog.signed ? '<span class="tag tag--success">已签约</span>' : '';
+        return \`
+          <a class="recent-item" href="hotel-detail.html?id=\${h.id}">
+            <div class="recent-item__info">
+              <div class="recent-item__name">\${visitTag}\${h.name}</div>
+              <div class="recent-item__meta">
+                \${signedTag}\${scoreTag}
+                <span>\${Utils.formatDate(h.updatedAt)}</span>
+              </div>
+            </div>
+            <span class="recent-item__arrow">›</span>
+          </a>
+        \`;
+      }).join('');
+    }
+
+    document.getElementById('timeTabs').addEventListener('click', e => {
+      const btn = e.target.closest('[data-range]');
+      if (!btn) return;
+      document.querySelectorAll('.time-tab').forEach(t => t.classList.remove('time-tab--active'));
+      btn.classList.add('time-tab--active');
+      currentRange = btn.dataset.range;
+      document.getElementById('customDateRow').style.display = currentRange === 'custom' ? 'flex' : 'none';
+      if (currentRange !== 'custom') render();
+    });
+
+    document.getElementById('dateFrom').addEventListener('change', render);
+    document.getElementById('dateTo').addEventListener('change', render);
+
+    render();
+  </script>
+</body>
+</html>
+`;
+fs.writeFileSync(out, html, 'utf8');
+console.log('OK', out);

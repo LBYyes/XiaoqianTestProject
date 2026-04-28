@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>酒店列表 - 奇趣庄园</title>
+  <link rel="stylesheet" href="../assets/css/theme.css?v=6">
+  <link rel="stylesheet" href="../assets/css/common.css?v=6">
+  <link rel="stylesheet" href="../assets/css/pages/hotel-list.css?v=6">
+</head>
+<body>
+  <div class="app-wrapper">
+    <div id="header"></div>
+    <main class="page-content">
+      <div class="search-bar">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+        <input type="text" id="searchInput" placeholder="搜索酒店名称...">
+      </div>
+
+      <div class="filter-tabs" id="filterTabs"></div>
+
+      <div class="filter-extra-row">
+        <select class="filter-select" id="provinceSelect">
+          <option value="">全部省份</option>
+        </select>
+        <select class="filter-select" id="scoreTypeSelect">
+          <option value="">全部类型</option>
+          <option value="qualified">合格客户（≥70）</option>
+          <option value="nurture">培育客户（50-69）</option>
+          <option value="invalid">无效客户（&lt;50）</option>
+          <option value="unscreened">未筛选</option>
+        </select>
+      </div>
+
+      <div class="list-summary" id="listSummary"></div>
+      <div id="hotelList"></div>
+    </main>
+    <div id="tabbar"></div>
+  </div>
+
+  <script src="../assets/js/mock/hotels.js?v=5"></script>
+  <script src="../assets/js/utils.js?v=4"></script>
+  <script src="../assets/js/components/header.js?v=4"></script>
+  <script src="../assets/js/components/tabbar.js?v=4"></script>
+  <script>
+    const ADD_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" width="22" height="22"><path d="M12 5v14M5 12h14"/></svg>`;
+    Header.render('#header', {
+      title: '酒店列表',
+      showBack: false,
+      actions: `<a href="hotel-edit.html" style="color:var(--color-primary);display:flex;align-items:center;">${ADD_ICON}</a>`
+    });
+    TabBar.render('#tabbar', { active: 'list' });
+
+    const filterState = {
+      block: Utils.getUrlParam('block') || 'all',
+      keyword: '',
+      province: '',
+      scoreType: ''
+    };
+
+    function extractProvince(address) {
+      if (!address) return '';
+      const m = address.match(/^([\u4e00-\u9fa5]+?省|[\u4e00-\u9fa5]+?自治区|北京|天津|上海|重庆)/);
+      return m ? m[1] : '';
+    }
+
+    function populateProvinceSelect() {
+      const hotels = Utils.getAllHotels();
+      const provinces = [...new Set(hotels.map(h => extractProvince(h.address)).filter(Boolean))].sort();
+      const el = document.getElementById('provinceSelect');
+      provinces.forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p;
+        opt.textContent = p;
+        el.appendChild(opt);
+      });
+    }
+
+    const blockFilters = [
+      { key: 'all',       label: '全部' },
+      { key: 'signed',    label: '已签约' },
+      { key: 'checkin',   label: '建档' },
+      { key: 'screening', label: '意向筛选' },
+      { key: 'pitch',     label: '产品讲解' },
+      { key: 'negotiate', label: '合作模式' },
+      { key: 'contract',  label: '合同推进' }
+    ];
+
+    // 获取酒店当前所处阶段（第一个未完成的阶段）
+    function getCurrentStage(h) {
+      const sd = h.stageData || {};
+      // 有 checkin 字段且 completed === false → 当前处于建档阶段
+      if (sd.checkin && sd.checkin.completed === false) return 'checkin';
+      if (!sd.screening?.completed) return 'screening';
+      if (!sd.pitch?.completed) return 'pitch';
+      if (!sd.negotiate?.completed) return 'negotiate';
+      if (!h.signedAt) return 'contract';
+      return null; // 全部完成（已签约）
+    }
+
+    const renderFilters = () => {
+      document.getElementById('filterTabs').innerHTML = blockFilters.map(f =>
+        `<div class="filter-tab ${f.key === filterState.block ? 'filter-tab--active' : ''}" data-block="${f.key}">${f.label}</div>`
+      ).join('');
+    };
+
+    const renderList = () => {
+      let hotels = Utils.getAllHotels();
+
+      if (filterState.block === 'signed') {
+        hotels = hotels.filter(h => h.signedAt);
+      } else if (filterState.block !== 'all') {
+        hotels = hotels.filter(h => getCurrentStage(h) === filterState.block);
+      }
+
+      if (filterState.keyword) {
+        const kw = filterState.keyword.toLowerCase();
+        hotels = hotels.filter(h => h.name.toLowerCase().includes(kw));
+      }
+
+      if (filterState.province) {
+        hotels = hotels.filter(h => extractProvince(h.address) === filterState.province);
+      }
+
+      if (filterState.scoreType) {
+        if (filterState.scoreType === 'unscreened') {
+          hotels = hotels.filter(h => !h.stageData?.screening);
+        } else {
+          hotels = hotels.filter(h => h.stageData?.screening?.result === filterState.scoreType);
+        }
+      }
+
+      hotels.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+
+      document.getElementById('listSummary').textContent = `共 ${hotels.length} 家酒店`;
+
+      const listEl = document.getElementById('hotelList');
+      if (!hotels.length) {
+        listEl.innerHTML = '<div class="empty-state"><div class="empty-state__icon">🏨</div><div class="empty-state__text">暂无符合条件的酒店</div></div>';
+        return;
+      }
+
+      listEl.innerHTML = hotels.map(h => {
+        const prog = Utils.getHotelProgress(h);
+        const screenTag = prog.score
+          ? `<span class="tag tag--${Utils.screenResultTag(prog.result)}">${prog.score}分 · ${Utils.screenResultShort(prog.result)}</span>`
+          : '';
+        const visitTag = prog.hasVisit ? '<span class="tag" style="background:var(--color-primary-bg);color:var(--color-primary);">📍 参观案例</span>' : '';
+
+        const FLOW_KEYS   = ['screening', 'pitch', 'negotiate', 'contract'];
+        const FLOW_LABELS = { screening: '筛选', pitch: '讲解', negotiate: '谈判', contract: '合同' };
+
+        const getFlowStatus = (h, key) => {
+          const sd = h.stageData || {};
+          if (key === 'screening') return sd.screening?.completed ? 'done' : (sd.screening ? 'progress' : 'empty');
+          if (key === 'pitch')     return sd.pitch?.completed     ? 'done' : (sd.pitch?.sessions?.length > 0 ? 'progress' : 'empty');
+          if (key === 'negotiate') return sd.negotiate?.completed ? 'done' : (sd.negotiate?.rounds?.length > 0 ? 'progress' : 'empty');
+          if (key === 'contract')  return h.signedAt              ? 'done' : (sd.contract?.version ? 'progress' : 'empty');
+          return 'empty';
+        };
+
+        let currentFound = false;
+        const flowSteps = FLOW_KEYS.map(key => {
+          const s = getFlowStatus(h, key);
+          if (s === 'done') return { key, cls: 'done', label: '✓' + FLOW_LABELS[key] };
+          if (!currentFound) {
+            currentFound = true;
+            return { key, cls: s === 'progress' ? 'current' : 'upcoming', label: FLOW_LABELS[key] };
+          }
+          return { key, cls: 'locked', label: FLOW_LABELS[key] };
+        });
+
+        const stageFlow = `
+          <div class="stage-flow">
+            ${flowSteps.map((step, i) => `
+              ${i > 0 ? '<span class="sf-sep">›</span>' : ''}
+              <span class="sf-step sf-step--${step.cls}">${step.label}</span>
+            `).join('')}
+          </div>
+        `;
+
+        return `
+          <a class="hotel-item" href="hotel-detail.html?id=${h.id}">
+            <div class="hotel-item__info">
+              <div class="hotel-item__name">${h.name} ${prog.signed ? '<span style="font-size:11px;color:var(--color-success);font-weight:600;">已签约</span>' : ''}</div>
+              <div class="hotel-item__detail">
+                <span>${h.brand || '-'}</span>
+                <span>${h.cityTier}</span>
+                <span>亲子房 ${h.kidsRooms} 间</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap;">
+                ${screenTag}
+                ${visitTag}
+              </div>
+              ${stageFlow}
+            </div>
+            <span class="hotel-item__arrow">›</span>
+          </a>
+        `;
+      }).join('');
+    };
+
+    document.getElementById('filterTabs').addEventListener('click', (e) => {
+      const tab = e.target.closest('[data-block]');
+      if (!tab) return;
+      filterState.block = tab.dataset.block;
+      renderFilters();
+      renderList();
+    });
+
+    document.getElementById('searchInput').addEventListener('input', (e) => {
+      filterState.keyword = e.target.value.trim();
+      renderList();
+    });
+
+    document.getElementById('provinceSelect').addEventListener('change', (e) => {
+      filterState.province = e.target.value;
+      renderList();
+    });
+
+    document.getElementById('scoreTypeSelect').addEventListener('change', (e) => {
+      filterState.scoreType = e.target.value;
+      renderList();
+    });
+
+    populateProvinceSelect();
+    renderFilters();
+    renderList();
+  </script>
+</body>
+</html>

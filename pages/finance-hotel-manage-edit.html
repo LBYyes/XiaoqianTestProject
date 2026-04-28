@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>财务酒店档案审核 - 奇趣XR酒店管理平台</title>
+  <link rel="stylesheet" href="../assets/css/theme.css?v=18">
+  <link rel="stylesheet" href="../assets/css/common.css?v=18">
+  <link rel="stylesheet" href="../assets/css/pages/ops.css?v=18">
+</head>
+<body>
+  <div class="app-wrapper">
+    <div id="header"></div>
+    <main class="page-content page-content--with-header" style="padding-bottom:calc(var(--tabbar-height) + var(--safe-bottom) + 72px);">
+      <div class="card">
+        <div id="auditStatusLine" class="ops-audit-line"></div>
+        <div class="form-group">
+          <label class="form-label form-label--required">酒店名称</label>
+          <input id="name" class="form-input" placeholder="请输入酒店名称">
+        </div>
+        <div class="ops-grid-2">
+          <div class="form-group">
+            <label class="form-label form-label--required">省份</label>
+            <input id="province" class="form-input" placeholder="如：浙江省">
+          </div>
+          <div class="form-group">
+            <label class="form-label">城市</label>
+            <input id="city" class="form-input" placeholder="如：杭州市">
+          </div>
+        </div>
+        <div class="ops-grid-2">
+          <div class="form-group">
+            <label class="form-label form-label--required">运营</label>
+            <input id="ownerOps" class="form-input" placeholder="请输入运营姓名">
+          </div>
+          <div class="form-group">
+            <label class="form-label form-label--required">销售</label>
+            <input id="ownerSales" class="form-input" placeholder="请输入销售姓名">
+          </div>
+        </div>
+        <div class="ops-grid-2">
+          <div class="form-group">
+            <label class="form-label">上线时间</label>
+            <input id="launchDate" type="date" class="form-input">
+          </div>
+          <div class="form-group">
+            <label class="form-label">约定溢价比例（%）</label>
+            <input id="targetPremiumRate" type="number" class="form-input" placeholder="如：20">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">上线渠道（可多选）</label>
+          <div class="ops-manage-check-grid" id="channelChecks"></div>
+        </div>
+      </div>
+
+      <div class="card mt-md">
+        <div class="flex-between mb-md">
+          <div class="card__title">房型</div>
+          <button id="addRoomBtn" class="btn btn--outline btn--sm" type="button">+ 添加房型</button>
+        </div>
+        <div id="roomTypeRoot"></div>
+      </div>
+
+      <div class="card mt-md">
+        <div class="card__title mb-md">商务条款</div>
+        <div class="form-group">
+          <label class="form-label form-label--required">合作模式</label>
+          <select id="businessMode" class="form-select">
+            <option value="yearly_guarantee">全年保底</option>
+            <option value="peak_guarantee">旺季保底</option>
+            <option value="buyout">买断</option>
+          </select>
+        </div>
+        <div id="businessTermsRoot"></div>
+      </div>
+    </main>
+    <div class="action-footer action-footer--above-tabbar">
+      <div class="ops-footer-actions">
+        <button class="btn btn--outline btn--lg" id="confirmBtn" type="button">确认信息</button>
+        <button class="btn btn--primary btn--lg" id="submitModifyBtn" type="button">修改完成提交</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="../assets/js/mock/operations.js?v=18"></script>
+  <script src="../assets/js/utils.js?v=18"></script>
+  <script src="../assets/js/components/header.js?v=18"></script>
+  <script>
+    const role = (Utils.getUrlParam('role') || 'finance').trim();
+    const editId = (Utils.getUrlParam('id') || '').trim();
+    const isEdit = !!editId;
+    const record = isEdit ? Utils.getOpsHotelById(editId) : null;
+    if (!record) {
+      alert('未找到酒店档案');
+      window.location.href = `finance-hotel-manage-list.html?role=${encodeURIComponent(role)}`;
+    }
+
+    Header.render('#header', {
+      title: isEdit ? '审核酒店档案' : '新增酒店档案',
+      showBack: true,
+      backHref: `finance-hotel-manage-list.html?role=${encodeURIComponent(role)}`
+    });
+
+    const enabledChannels = OTA_CHANNEL_OPTIONS.filter((ch) => ['ctrip', 'fliggy', 'meituan', 'douyin'].includes(ch.key));
+    document.getElementById('channelChecks').innerHTML = enabledChannels.map(ch => `
+      <label class="ops-manage-check-item">
+        <input type="checkbox" class="channel-check" value="${ch.key}">
+        <span>${ch.label}</span>
+      </label>
+    `).join('');
+
+    let roomTypes = (record?.roomTypes || []).map((r) => ({
+      id: r.id,
+      name: r.name || '',
+      cooperationRooms: Number(r.cooperationRooms) || 0
+    }));
+    let businessTerms = record?.businessTerms || {
+      mode: 'yearly_guarantee',
+      yearlyGuaranteePrice: '',
+      peakGuaranteePrice: '',
+      buyoutUnitPrice: '',
+      cooperationPeriod: '',
+      commissionPolicy: '',
+      maintenanceFee: '',
+      buyoutTotalPrice: '',
+      buyoutTotalManual: false,
+      otherTerms: ''
+    };
+    const originalRecord = JSON.parse(JSON.stringify(record || {}));
+
+    const auditMeta = Utils.getAuditStatusMeta(record?.auditStatus || 'pending_submit');
+    document.getElementById('auditStatusLine').innerHTML = `<span class="tag tag--${auditMeta.tag}">${auditMeta.label}</span>`;
+
+    if (record) {
+      document.getElementById('name').value = record.name || '';
+      document.getElementById('launchDate').value = record.launchDate || '';
+      document.getElementById('targetPremiumRate').value = Math.round((Number(record.targetPremiumRate) || 0) * 100);
+      document.getElementById('ownerOps').value = record.ownerOps || '';
+      document.getElementById('ownerSales').value = record.ownerSales || '';
+      document.getElementById('province').value = record.province || '';
+      document.getElementById('city').value = record.city || '';
+      (record.channels || []).forEach((key) => {
+        const el = document.querySelector(`.channel-check[value="${key}"]`);
+        if (el) el.checked = true;
+      });
+      document.getElementById('businessMode').value = businessTerms.mode || 'yearly_guarantee';
+    }
+
+    function renderRooms() {
+      const root = document.getElementById('roomTypeRoot');
+      root.innerHTML = roomTypes.map((r, idx) => `
+        <div class="ops-room-edit-row">
+          <div class="ops-grid-2">
+            <div class="form-group" style="margin-bottom:0;">
+              <label class="form-label">房型名称</label>
+              <input class="form-input room-name" data-idx="${idx}" value="${r.name || ''}" placeholder="请输入房型名称">
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+              <label class="form-label form-label--required">合作间数</label>
+              <input class="form-input room-cooperation" data-idx="${idx}" type="number" min="0" value="${r.cooperationRooms || 0}" placeholder="请输入合作间数">
+            </div>
+          </div>
+          ${roomTypes.length > 1 ? `<div class="text-danger text-right" style="font-size:12px;cursor:pointer;" onclick="window.removeRoom(${idx})">删除房型</div>` : ''}
+        </div>
+      `).join('');
+      root.querySelectorAll('.room-name').forEach((el) => {
+        el.addEventListener('input', (e) => {
+          roomTypes[Number(e.target.dataset.idx)].name = e.target.value;
+        });
+      });
+      root.querySelectorAll('.room-cooperation').forEach((el) => {
+        el.addEventListener('input', (e) => {
+          roomTypes[Number(e.target.dataset.idx)].cooperationRooms = Math.max(Number(e.target.value) || 0, 0);
+          renderBusinessTerms();
+        });
+      });
+    }
+
+    window.removeRoom = (idx) => {
+      roomTypes.splice(idx, 1);
+      renderRooms();
+    };
+
+    document.getElementById('addRoomBtn').addEventListener('click', () => {
+      roomTypes.push({ id: `r_${Date.now()}_${Math.random().toString(16).slice(2, 6)}`, name: '', cooperationRooms: 0 });
+      renderRooms();
+    });
+
+    function renderBusinessTerms() {
+      const totalRooms = Utils.calcOpsRoomTotal(roomTypes);
+      const mode = document.getElementById('businessMode').value;
+      businessTerms.mode = mode;
+      const root = document.getElementById('businessTermsRoot');
+      const modeFields = {
+        yearly_guarantee: `
+          <div class="form-group">
+            <label class="form-label form-label--required">全年保底价（万/间/年）</label>
+            <input class="form-input bt-field" data-key="yearlyGuaranteePrice" value="${businessTerms.yearlyGuaranteePrice || ''}" placeholder="请输入全年保底价">
+          </div>
+          <div class="form-group">
+            <label class="form-label">合作间数（自动汇总）</label>
+            <input class="form-input" value="${totalRooms}" readonly>
+          </div>
+        `,
+        peak_guarantee: `
+          <div class="form-group">
+            <label class="form-label form-label--required">旺季保底价（万/间/年）</label>
+            <input class="form-input bt-field" data-key="peakGuaranteePrice" value="${businessTerms.peakGuaranteePrice || ''}" placeholder="请输入旺季保底价">
+          </div>
+          <div class="form-group">
+            <label class="form-label">合作间数（自动汇总）</label>
+            <input class="form-input" value="${totalRooms}" readonly>
+          </div>
+        `,
+        buyout: `
+          <div class="form-group">
+            <label class="form-label form-label--required">单间保底价（万/间/年）</label>
+            <input class="form-input bt-field" data-key="buyoutUnitPrice" value="${businessTerms.buyoutUnitPrice || ''}" placeholder="请输入单间保底价">
+          </div>
+          <div class="form-group">
+            <label class="form-label">买断间数（自动汇总）</label>
+            <input class="form-input" value="${totalRooms}" readonly>
+          </div>
+          <div class="form-group">
+            <label class="form-label">维保费用</label>
+            <input class="form-input bt-field" data-key="maintenanceFee" value="${businessTerms.maintenanceFee || ''}" placeholder="请输入维保费用">
+          </div>
+          <div class="form-group">
+            <label class="form-label">买断总价（买断价格*间数+维保，可手动）</label>
+            <input class="form-input bt-field" data-key="buyoutTotalPrice" value="${businessTerms.buyoutTotalPrice || ''}" placeholder="自动计算后可手动修改">
+          </div>
+        `
+      };
+      root.innerHTML = `
+        ${modeFields[mode]}
+        <div class="form-group">
+          <label class="form-label form-label--required">合作期限（如3年）</label>
+          <input class="form-input bt-field" data-key="cooperationPeriod" value="${businessTerms.cooperationPeriod || ''}" placeholder="请输入合作期限">
+        </div>
+        <div class="form-group">
+          <label class="form-label form-label--required">抽佣政策</label>
+          <textarea class="form-textarea bt-field" data-key="commissionPolicy" placeholder="请输入抽佣政策">${businessTerms.commissionPolicy || ''}</textarea>
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+          <label class="form-label">其他合作条件</label>
+          <textarea class="form-textarea bt-field" data-key="otherTerms" placeholder="请输入其他合作条件">${businessTerms.otherTerms || ''}</textarea>
+        </div>
+      `;
+
+      const unit = Number(businessTerms.buyoutUnitPrice) || 0;
+      const maintenance = Number(businessTerms.maintenanceFee) || 0;
+      const autoTotal = unit * totalRooms + maintenance;
+      if (mode === 'buyout' && !businessTerms.buyoutTotalManual) {
+        businessTerms.buyoutTotalPrice = autoTotal ? String(autoTotal) : '';
+        const totalInput = root.querySelector('.bt-field[data-key="buyoutTotalPrice"]');
+        if (totalInput) totalInput.value = businessTerms.buyoutTotalPrice;
+      }
+
+      root.querySelectorAll('.bt-field').forEach((el) => {
+        el.addEventListener('input', (e) => {
+          const key = e.target.dataset.key;
+          const prev = businessTerms[key] || '';
+          businessTerms[key] = e.target.value;
+          if (key === 'buyoutTotalPrice' && e.target.value !== prev) businessTerms.buyoutTotalManual = true;
+          if ((key === 'buyoutUnitPrice' || key === 'maintenanceFee') && !businessTerms.buyoutTotalManual) {
+            renderBusinessTerms();
+          }
+        });
+      });
+    }
+
+    function buildPayload() {
+      const name = document.getElementById('name').value.trim();
+      const launchDate = document.getElementById('launchDate').value;
+      const ownerOps = document.getElementById('ownerOps').value.trim();
+      const ownerSales = document.getElementById('ownerSales').value.trim();
+      const province = document.getElementById('province').value.trim();
+      const city = document.getElementById('city').value.trim();
+      const channels = Array.from(document.querySelectorAll('.channel-check:checked')).map((x) => x.value);
+      const cleanedRooms = roomTypes
+        .map((r) => ({ id: r.id, name: (r.name || '').trim(), cooperationRooms: Math.max(Number(r.cooperationRooms) || 0, 0) }))
+        .filter((r) => r.name);
+      const mode = document.getElementById('businessMode').value;
+
+      if (!name) return alert('请填写酒店名称');
+      if (!province) return alert('请填写省份');
+      if (!ownerOps) return alert('请填写运营');
+      if (!ownerSales) return alert('请填写销售');
+      if (!channels.length) return alert('请至少选择一个渠道');
+      if (!cleanedRooms.length) return alert('请至少保留一个房型');
+      if (cleanedRooms.some((r) => !r.cooperationRooms)) return alert('请填写每个房型的合作间数');
+      if (!businessTerms.cooperationPeriod) return alert('请填写合作期限');
+      if (!businessTerms.commissionPolicy) return alert('请填写抽佣政策');
+      if (mode === 'yearly_guarantee' && !businessTerms.yearlyGuaranteePrice) return alert('请填写全年保底价');
+      if (mode === 'peak_guarantee' && !businessTerms.peakGuaranteePrice) return alert('请填写旺季保底价');
+      if (mode === 'buyout' && !businessTerms.buyoutUnitPrice) return alert('请填写单间保底价');
+
+      return {
+        id: record ? record.id : undefined,
+        name,
+        launchDate,
+        targetPremiumRate: (Number(document.getElementById('targetPremiumRate').value) || 0) / 100,
+        ownerOps,
+        ownerSales,
+        province,
+        city,
+        channels,
+        roomTypes: cleanedRooms,
+        totalCooperationRooms: Utils.calcOpsRoomTotal(cleanedRooms),
+        businessTerms: { ...businessTerms, mode }
+      };
+    }
+
+    function collectChangedFields(nextPayload) {
+      const mapping = [
+        { key: 'name', label: '酒店名称' },
+        { key: 'province', label: '省份' },
+        { key: 'city', label: '城市' },
+        { key: 'ownerOps', label: '运营' },
+        { key: 'ownerSales', label: '销售' },
+        { key: 'launchDate', label: '上线时间' },
+        { key: 'targetPremiumRate', label: '约定溢价比例' },
+        { key: 'channels', label: '上线渠道' },
+        { key: 'roomTypes', label: '房型' },
+        { key: 'businessTerms', label: '商务条款' }
+      ];
+      return mapping
+        .filter((item) => JSON.stringify(originalRecord[item.key]) !== JSON.stringify(nextPayload[item.key]))
+        .map((item) => item.label);
+    }
+
+    function saveAsApproved(mode) {
+      const payload = buildPayload();
+      if (!payload) return;
+      const modifiedFields = collectChangedFields(payload);
+      const next = {
+        ...payload,
+        auditStatus: 'approved',
+        financeReview: {
+          modifiedFields,
+          modifiedAt: new Date().toISOString(),
+          modifiedBy: '财务',
+          note: mode === 'confirm' ? '财务确认信息' : '财务修改后提交'
+        }
+      };
+      Utils.saveOpsHotel(next);
+      window.location.href = `finance-hotel-manage-list.html?role=${encodeURIComponent(role)}`;
+    }
+
+    document.getElementById('confirmBtn').addEventListener('click', () => saveAsApproved('confirm'));
+    document.getElementById('submitModifyBtn').addEventListener('click', () => saveAsApproved('modify'));
+    document.getElementById('businessMode').addEventListener('change', renderBusinessTerms);
+
+    renderRooms();
+    renderBusinessTerms();
+  </script>
+</body>
+</html>

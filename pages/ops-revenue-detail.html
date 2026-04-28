@@ -1,0 +1,304 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>收益管理 · 周明细 - 奇趣XR酒店管理平台</title>
+  <link rel="stylesheet" href="../assets/css/theme.css?v=76">
+  <link rel="stylesheet" href="../assets/css/common.css?v=76">
+  <link rel="stylesheet" href="../assets/css/pages/ops.css?v=76">
+</head>
+<body>
+  <div class="app-wrapper">
+    <div id="header"></div>
+    <main class="page-content page-content--with-header">
+
+      <div class="rev-detail-header">
+        <div class="rev-detail-header__name" id="hotelName">-</div>
+        <div class="rev-detail-header__meta" id="hotelMeta">-</div>
+      </div>
+
+      <div class="rev-period-bar">
+        <button class="btn btn--ghost btn--sm" id="monthPrevBtn" type="button">‹</button>
+        <div class="rev-period-bar__label" id="monthLabel"></div>
+        <button class="btn btn--ghost btn--sm" id="monthNextBtn" type="button">›</button>
+      </div>
+
+      <div class="rev-detail-summary" id="summaryBlock"></div>
+
+      <div class="rev-week-table-wrap">
+        <table class="rev-week-table rev-week-table--v2">
+          <colgroup>
+            <col style="width:17%">
+            <col style="width:6.5%">
+            <col style="width:6.5%">
+            <col style="width:6.5%">
+            <col style="width:6.5%">
+            <col style="width:13%">
+            <col style="width:9%">
+            <col style="width:13%">
+            <col style="width:13%">
+            <col style="width:9%">
+          </colgroup>
+          <thead>
+            <tr>
+              <th>周次</th>
+              <th>携程</th>
+              <th>抖音</th>
+              <th>飞猪</th>
+              <th>美团</th>
+              <th class="rev-week-table__sub">OTA小计</th>
+              <th>升级券</th>
+              <th>线下其他</th>
+              <th class="rev-week-table__sub-offline">线下小计</th>
+              <th class="rev-week-table__occu">占房</th>
+            </tr>
+          </thead>
+          <tbody id="weekRows"></tbody>
+          <tfoot id="weekFoot"></tfoot>
+        </table>
+      </div>
+
+    </main>
+    <div class="rev-tip-pop" id="weeklyHintPop">
+      <div class="rev-tip-pop__mask" id="weeklyHintMask"></div>
+      <div class="rev-tip-pop__panel">
+        <div class="rev-tip-pop__title">周累计说明</div>
+        <div class="rev-tip-pop__line">周维度数据为运营每周与酒店核对，可能和月报对账数据存在出入。</div>
+      </div>
+    </div>
+  </div>
+
+  <script src="../assets/js/mock/operations.js?v=76"></script>
+  <script src="../assets/js/mock/revenue.js?v=76"></script>
+  <script src="../assets/js/utils.js?v=76"></script>
+  <script src="../assets/js/components/header.js?v=76"></script>
+  <script>
+    const role = (Utils.getUrlParam('role') || 'middle').trim();
+    const hotelId = (Utils.getUrlParam('id') || '').trim();
+
+    const MIN_MONTH = REVENUE_MONTH_KEYS[0];
+    const MAX_MONTH = REVENUE_MONTH_KEYS[REVENUE_MONTH_KEYS.length - 1];
+    function clampMonth(m) {
+      if (!/^\d{4}-\d{2}$/.test(m || '')) return MAX_MONTH;
+      if (m < MIN_MONTH) return MIN_MONTH;
+      if (m > MAX_MONTH) return MAX_MONTH;
+      return m;
+    }
+    function shiftMonth(m, step) {
+      const [y, mm] = m.split('-').map(Number);
+      const d = new Date(y, mm - 1 + step, 1);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    }
+    let selectedMonth = clampMonth((Utils.getUrlParam('month') || MAX_MONTH).trim());
+
+    // 回返列表页时带回所有筛选参数
+    function backHrefList() {
+      const opsOwner = (Utils.getUrlParam('opsOwner') || '').trim();
+      const sales = (Utils.getUrlParam('sales') || '').trim();
+      const province = (Utils.getUrlParam('province') || '').trim();
+      const keyword = (Utils.getUrlParam('keyword') || '').trim();
+      const hideUnlaunched = (Utils.getUrlParam('hideUnlaunched') || '1').trim();
+      const sort = (Utils.getUrlParam('sort') || 'settledNights').trim();
+      const order = (Utils.getUrlParam('order') || 'desc').trim();
+      return `ops-revenue-list.html?role=${encodeURIComponent(role)}&month=${encodeURIComponent(selectedMonth)}&opsOwner=${encodeURIComponent(opsOwner)}&sales=${encodeURIComponent(sales)}&province=${encodeURIComponent(province)}&keyword=${encodeURIComponent(keyword)}&hideUnlaunched=${encodeURIComponent(hideUnlaunched)}&sort=${encodeURIComponent(sort)}&order=${encodeURIComponent(order)}`;
+    }
+
+    Header.render('#header', {
+      title: '收益管理 · 周明细',
+      showBack: true,
+      backHref: backHrefList()
+    });
+
+    function fmtNum(n) {
+      const v = Math.round(Number(n) || 0);
+      return v.toLocaleString('zh-CN');
+    }
+    function diffClass(diff) {
+      if ((Number(diff) || 0) > 0) return 'rev-detail-summary__value--diff-pos';
+      if ((Number(diff) || 0) < 0) return 'rev-detail-summary__value--diff-neg';
+      return 'rev-detail-summary__value--diff-zero';
+    }
+    function diffSign(diff) {
+      const d = Number(diff) || 0;
+      if (d > 0) return `+${fmtNum(d)}`;
+      if (d < 0) return `-${fmtNum(Math.abs(d))}`;
+      return '0';
+    }
+    function diffSignAmount(diff) {
+      const d = Number(diff) || 0;
+      if (d > 0) return `+¥${fmtNum(d)}`;
+      if (d < 0) return `-¥${fmtNum(Math.abs(d))}`;
+      return '¥0';
+    }
+    function fmtWeekRange(startDate, endDate) {
+      const toMd = (s) => {
+        const str = String(s || '');
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+        return `${str.slice(5, 7)}/${str.slice(8, 10)}`;
+      };
+      return `${toMd(startDate)}-${toMd(endDate)}`;
+    }
+
+    function render() {
+      const hotels = Utils.getRevenueHotels();
+      const hotel = hotels.find((h) => String(h.id) === String(hotelId));
+      if (!hotel) {
+        document.getElementById('hotelName').textContent = '酒店不存在';
+        document.getElementById('hotelMeta').textContent = '';
+        document.getElementById('summaryBlock').innerHTML = '';
+        document.getElementById('weekRows').innerHTML = '<tr><td colspan="10" style="text-align:center;color:#94a3b8;padding:24px;">未找到酒店</td></tr>';
+        document.getElementById('weekFoot').innerHTML = '';
+        return;
+      }
+
+      // 头部
+      document.getElementById('hotelName').textContent = hotel.hotelName || '-';
+      document.getElementById('hotelMeta').textContent = `${hotel.province || '-'} · 运营 ${hotel.ownerOps || '-'} · 销售 ${hotel.ownerSales || '-'} · 合作 ${hotel.cooperationRooms || 0} 间 · 上线 ${hotel.launchDate || '-'}`;
+
+      // 月份切换
+      document.getElementById('monthLabel').textContent = selectedMonth;
+      document.getElementById('monthPrevBtn').disabled = selectedMonth <= MIN_MONTH;
+      document.getElementById('monthNextBtn').disabled = selectedMonth >= MAX_MONTH;
+
+      // 三行汇总
+      const view = Utils.calcRevenueMonthlyView(hotel, selectedMonth);
+      document.getElementById('summaryBlock').innerHTML = `
+        <div class="rev-detail-summary__row">
+          <div class="rev-detail-summary__label">月报合计</div>
+          <div class="rev-detail-summary__values">
+            <div class="rev-detail-summary__value">结算间夜 <strong>${fmtNum(view.settledNights)}</strong></div>
+            <div class="rev-detail-summary__value">总金额 <strong>¥${fmtNum(view.settlementAmount)}</strong></div>
+            <div class="rev-detail-summary__value">占房 <strong>${fmtNum(view.occupancyNights)}</strong></div>
+          </div>
+        </div>
+        <div class="rev-detail-summary__row">
+          <div class="rev-detail-summary__label">
+            <span class="rev-detail-summary__label-wrap">
+              <span>周累加</span>
+              <button type="button" class="rev-detail-summary__hint-btn" id="weeklyHintBtn" aria-label="周累计说明">?</button>
+            </span>
+          </div>
+          <div class="rev-detail-summary__values">
+            <div class="rev-detail-summary__value">预估间夜 <strong>${fmtNum(view.weekSumNights)}</strong></div>
+            <div class="rev-detail-summary__value">预估占房 <strong>${fmtNum(view.weekSumOccupancy)}</strong></div>
+          </div>
+        </div>
+        <div class="rev-detail-summary__row">
+          <div class="rev-detail-summary__label">出入</div>
+          <div class="rev-detail-summary__values">
+            <div class="rev-detail-summary__value ${diffClass(view.diffNights)}">间夜 ${diffSign(view.diffNights)}</div>
+            <div class="rev-detail-summary__value ${diffClass(view.diffOccupancy)}">占房 ${diffSign(view.diffOccupancy)}</div>
+          </div>
+        </div>
+      `;
+      const weeklyHintBtn = document.getElementById('weeklyHintBtn');
+      if (weeklyHintBtn) {
+        weeklyHintBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          openWeeklyHint();
+        });
+      }
+
+      // 周表格
+      const weekly = Utils.getRevenueWeeklyForHotel(hotel.id, selectedMonth);
+      const tbody = document.getElementById('weekRows');
+      const tfoot = document.getElementById('weekFoot');
+      if (!weekly.length) {
+        tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#94a3b8;padding:24px;">该月暂无数据</td></tr>';
+        tfoot.innerHTML = '';
+        return;
+      }
+      const sums = { ctrip: 0, douyin: 0, fliggy: 0, meituan: 0, ota: 0, upgradeCoupon: 0, otherOffline: 0, occupancy: 0 };
+      tbody.innerHTML = weekly.map((w) => {
+        const n = w.nights || {};
+        const ota = (Number(n.ctrip) || 0) + (Number(n.douyin) || 0) + (Number(n.fliggy) || 0) + (Number(n.meituan) || 0);
+        const offlineSub = (Number(n.upgradeCoupon) || 0) + (Number(n.otherOffline) || 0);
+        sums.ctrip += Number(n.ctrip) || 0;
+        sums.douyin += Number(n.douyin) || 0;
+        sums.fliggy += Number(n.fliggy) || 0;
+        sums.meituan += Number(n.meituan) || 0;
+        sums.ota += ota;
+        sums.upgradeCoupon += Number(n.upgradeCoupon) || 0;
+        sums.otherOffline += Number(n.otherOffline) || 0;
+        sums.occupancy += Number(n.occupancy) || 0;
+        return `
+          <tr>
+            <td>${fmtWeekRange(w.weekStartDate, w.weekEndDate)}</td>
+            <td>${fmtNum(n.ctrip)}</td>
+            <td>${fmtNum(n.douyin)}</td>
+            <td>${fmtNum(n.fliggy)}</td>
+            <td>${fmtNum(n.meituan)}</td>
+            <td class="rev-week-table__sub">${fmtNum(ota)}</td>
+            <td>${fmtNum(n.upgradeCoupon)}</td>
+            <td>${fmtNum(n.otherOffline)}</td>
+            <td class="rev-week-table__sub-offline">${fmtNum(offlineSub)}</td>
+            <td class="rev-week-table__occu">${fmtNum(n.occupancy)}</td>
+          </tr>
+        `;
+      }).join('');
+      sums.offlineSub = sums.upgradeCoupon + sums.otherOffline;
+      sums.totalSell = sums.ota + sums.offlineSub;
+      tfoot.innerHTML = `
+        <tr>
+          <td class="rev-week-table__total-cell">
+            <span class="rev-week-table__total-label">合计</span>
+            <span class="rev-week-table__total-sub">总销售 <strong>${fmtNum(sums.totalSell)}</strong></span>
+          </td>
+          <td>${fmtNum(sums.ctrip)}</td>
+          <td>${fmtNum(sums.douyin)}</td>
+          <td>${fmtNum(sums.fliggy)}</td>
+          <td>${fmtNum(sums.meituan)}</td>
+          <td class="rev-week-table__sub">${fmtNum(sums.ota)}</td>
+          <td>${fmtNum(sums.upgradeCoupon)}</td>
+          <td>${fmtNum(sums.otherOffline)}</td>
+          <td class="rev-week-table__sub-offline">${fmtNum(sums.offlineSub)}</td>
+          <td class="rev-week-table__occu">${fmtNum(sums.occupancy)}</td>
+        </tr>
+      `;
+    }
+
+    // —— 事件 ——
+    document.getElementById('monthPrevBtn').addEventListener('click', () => {
+      const next = shiftMonth(selectedMonth, -1);
+      if (next < MIN_MONTH) return;
+      selectedMonth = next;
+      // 同步顶部返回链接的 month 参数
+      Header.render('#header', {
+        title: '收益管理 · 周明细',
+        showBack: true,
+        backHref: backHrefList()
+      });
+      render();
+    });
+    document.getElementById('monthNextBtn').addEventListener('click', () => {
+      const next = shiftMonth(selectedMonth, 1);
+      if (next > MAX_MONTH) return;
+      selectedMonth = next;
+      Header.render('#header', {
+        title: '收益管理 · 周明细',
+        showBack: true,
+        backHref: backHrefList()
+      });
+      render();
+    });
+    const weeklyHintPop = document.getElementById('weeklyHintPop');
+    const weeklyHintMask = document.getElementById('weeklyHintMask');
+    function openWeeklyHint() {
+      weeklyHintPop.classList.add('is-open');
+      document.body.style.overflow = 'hidden';
+    }
+    function closeWeeklyHint() {
+      weeklyHintPop.classList.remove('is-open');
+      document.body.style.overflow = '';
+    }
+    weeklyHintMask.addEventListener('click', closeWeeklyHint);
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeWeeklyHint();
+    });
+
+    render();
+  </script>
+</body>
+</html>

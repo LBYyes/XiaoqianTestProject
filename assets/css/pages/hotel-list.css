@@ -1,0 +1,130 @@
+.hotel-item {
+  display: flex;
+  align-items: center;
+  background: var(--bg-card);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-lg);
+  margin-bottom: var(--spacing-md);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+
+.hotel-item:active {
+  transform: scale(0.98);
+}
+
+.hotel-item__info {
+  flex: 1;
+  min-width: 0;
+}
+
+.hotel-item__name {
+  font-size: var(--font-md);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hotel-item__detail {
+  font-size: var(--font-xs);
+  color: var(--text-secondary);
+  margin-top: 4px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs) var(--spacing-sm);
+}
+
+.hotel-item__stage {
+  margin-top: var(--spacing-sm);
+}
+
+.hotel-item__arrow {
+  color: var(--text-placeholder);
+  font-size: 18px;
+  flex-shrink: 0;
+  margin-left: var(--spacing-sm);
+}
+
+.list-summary {
+  font-size: var(--font-sm);
+  color: var(--text-secondary);
+  margin-bottom: var(--spacing-md);
+}
+
+/* ========== 省份/分数筛选行 ========== */
+.filter-extra-row {
+  display: flex;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-sm);
+}
+
+.filter-select {
+  flex: 1;
+  height: 34px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-size: var(--font-sm);
+  padding: 0 var(--spacing-sm);
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%239CA3AF'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  padding-right: 24px;
+}
+
+.filter-select:focus {
+  border-color: var(--color-primary);
+}
+
+/* ========== 阶段箭头流程 ========== */
+.stage-flow {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin-top: 8px;
+}
+
+.sf-step {
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.sf-step--done {
+  background: var(--color-success-bg);
+  color: var(--color-success);
+}
+
+.sf-step--current {
+  background: var(--color-primary);
+  color: #fff;
+}
+
+.sf-step--upcoming {
+  background: var(--color-primary-bg);
+  color: var(--color-primary);
+}
+
+.sf-step--locked {
+  background: var(--bg-input);
+  color: var(--text-placeholder);
+  opacity: 0.5;
+}
+
+.sf-sep {
+  font-size: 11px;
+  color: var(--text-placeholder);
+  line-height: 1;
+  opacity: 0.6;
+}

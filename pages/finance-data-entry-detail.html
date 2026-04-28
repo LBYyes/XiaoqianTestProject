@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>对账明细 - 奇趣XR酒店管理平台</title>
+  <link rel="stylesheet" href="../assets/css/theme.css?v=18">
+  <link rel="stylesheet" href="../assets/css/common.css?v=18">
+  <link rel="stylesheet" href="../assets/css/pages/ops.css?v=18">
+</head>
+<body>
+  <div class="app-wrapper">
+    <div id="header"></div>
+    <main class="page-content page-content--with-header" style="padding-bottom:calc(var(--tabbar-height) + var(--safe-bottom) + 72px);">
+      <div id="hotelInfo"></div>
+      <div class="ops-time-bar">
+        <div class="ops-time-tabs" id="rangeTabs">
+          <button class="ops-time-tab ops-time-tab--active" data-range="month">月</button>
+          <button class="ops-time-tab" data-range="year">年</button>
+          <button class="ops-time-tab" data-range="custom">自定义</button>
+        </div>
+        <div class="ops-period-switch" id="monthRow">
+          <button class="btn btn--ghost btn--sm" id="monthPrevBtn" type="button">‹</button>
+          <div class="ops-period-switch__label" id="monthLabel"></div>
+          <button class="btn btn--ghost btn--sm" id="monthNextBtn" type="button">›</button>
+        </div>
+        <div class="ops-period-switch" id="yearRow" style="display:none;">
+          <button class="btn btn--ghost btn--sm" id="yearPrevBtn" type="button">‹</button>
+          <div class="ops-period-switch__label" id="yearLabel"></div>
+          <button class="btn btn--ghost btn--sm" id="yearNextBtn" type="button">›</button>
+        </div>
+        <div class="ops-custom-date-row" id="customMonthRow" style="display:none;">
+          <input type="month" id="customFrom" class="form-input">
+          <span>至</span>
+          <input type="month" id="customTo" class="form-input">
+        </div>
+      </div>
+      <div class="ops-dashboard-card">
+        <div class="ops-dashboard-card__head">
+          <div class="ops-dashboard-card__title">对账数据</div>
+          <div class="ops-dashboard-card__desc" id="rangeText"></div>
+        </div>
+        <div id="recordList"></div>
+      </div>
+    </main>
+    <div class="action-footer action-footer--above-tabbar">
+      <a class="btn btn--primary btn--block btn--lg" id="addBtn">新增月度对账</a>
+    </div>
+  </div>
+
+  <script src="../assets/js/mock/operations.js?v=18"></script>
+  <script src="../assets/js/utils.js?v=18"></script>
+  <script src="../assets/js/components/header.js?v=18"></script>
+  <script>
+    const role = (Utils.getUrlParam('role') || 'finance').trim();
+    const hotelId = (Utils.getUrlParam('id') || '').trim();
+    const hotel = Utils.getFinanceHotelById(hotelId);
+    let rangeType = (Utils.getUrlParam('rangeType') || 'month').trim();
+    if (!['month', 'year', 'custom'].includes(rangeType)) rangeType = 'month';
+    let selectedMonth = (Utils.getUrlParam('month') || new Date().toISOString().slice(0, 7)).trim();
+    let selectedYear = (Utils.getUrlParam('year') || selectedMonth.slice(0, 4)).trim();
+    let customFrom = (Utils.getUrlParam('fromMonth') || '').trim();
+    let customTo = (Utils.getUrlParam('toMonth') || '').trim();
+    const status = (Utils.getUrlParam('status') || 'all').trim();
+    const opsOwner = (Utils.getUrlParam('opsOwner') || 'all').trim();
+    const sales = (Utils.getUrlParam('sales') || 'all').trim();
+    const province = (Utils.getUrlParam('province') || 'all').trim();
+    const keyword = (Utils.getUrlParam('keyword') || '').trim();
+
+    const listBackHref = `finance-data-entry-list.html?role=${encodeURIComponent(role)}&rangeType=${encodeURIComponent(rangeType)}&month=${encodeURIComponent(selectedMonth)}&year=${encodeURIComponent(selectedYear)}&fromMonth=${encodeURIComponent(customFrom)}&toMonth=${encodeURIComponent(customTo)}&status=${encodeURIComponent(status)}&opsOwner=${encodeURIComponent(opsOwner)}&sales=${encodeURIComponent(sales)}&province=${encodeURIComponent(province)}&keyword=${encodeURIComponent(keyword)}`;
+    Header.render('#header', {
+      title: '数据明细',
+      showBack: true,
+      backHref: listBackHref
+    });
+
+    if (!hotel) {
+      document.getElementById('hotelInfo').innerHTML = '<div class="empty-state"><div class="empty-state__icon">🏨</div><div class="empty-state__text">酒店不存在</div></div>';
+      document.getElementById('addBtn').style.display = 'none';
+    }
+
+    function monthRangeOfYear(year) {
+      return { start: `${year}-01`, end: `${year}-12` };
+    }
+
+    function compareMonth(a, b) {
+      return String(a || '').localeCompare(String(b || ''));
+    }
+
+    function shiftMonth(monthKey, step) {
+      const safe = /^\d{4}-\d{2}$/.test(monthKey) ? monthKey : new Date().toISOString().slice(0, 7);
+      const [y, m] = safe.split('-').map(Number);
+      const date = new Date(y, m - 1 + step, 1);
+      const nextY = date.getFullYear();
+      const nextM = String(date.getMonth() + 1).padStart(2, '0');
+      return `${nextY}-${nextM}`;
+    }
+
+    function getCurrentRange() {
+      if (rangeType === 'month') return { start: selectedMonth, end: selectedMonth };
+      if (rangeType === 'year') return monthRangeOfYear(selectedYear);
+      if (!customFrom || !customTo || compareMonth(customFrom, customTo) > 0) return null;
+      return { start: customFrom, end: customTo };
+    }
+
+    function rangeLabel(range) {
+      if (!range) return '自定义区间无效';
+      if (rangeType === 'month') return range.start;
+      if (rangeType === 'year') return `${selectedYear}年`;
+      return `区间：${range.start} 至 ${range.end}`;
+    }
+
+    function render() {
+      document.querySelectorAll('#rangeTabs .ops-time-tab').forEach((btn) => {
+        btn.classList.toggle('ops-time-tab--active', btn.dataset.range === rangeType);
+      });
+      document.getElementById('monthRow').style.display = rangeType === 'month' ? 'flex' : 'none';
+      document.getElementById('yearRow').style.display = rangeType === 'year' ? 'flex' : 'none';
+      document.getElementById('customMonthRow').style.display = rangeType === 'custom' ? 'flex' : 'none';
+      document.getElementById('customFrom').value = customFrom;
+      document.getElementById('customTo').value = customTo;
+      document.getElementById('monthLabel').textContent = selectedMonth;
+      document.getElementById('yearLabel').textContent = `${selectedYear}年`;
+      if (!hotel) return;
+
+      const range = getCurrentRange();
+      document.getElementById('hotelInfo').innerHTML = `
+        <div class="ops-detail-head">
+          <div class="ops-detail-head__title">${hotel.hotelName || '-'}</div>
+          <div class="ops-hotel-item__meta">${hotel.province || '-'} · 运营：${hotel.ownerOps || '-'} · 销售：${hotel.ownerSales || '-'}</div>
+          <div class="ops-hotel-item__meta">上线时间：${hotel.launchDate || '-'} · 合作间数：${hotel.cooperationRooms || 0} 间</div>
+          <div class="ops-hotel-item__meta">抽佣政策：${hotel.commissionPolicyText || '-'}</div>
+        </div>
+      `;
+      document.getElementById('rangeText').textContent = rangeLabel(range);
+
+      document.getElementById('addBtn').href = `finance-data-entry-edit.html?role=${encodeURIComponent(role)}&id=${encodeURIComponent(hotel.id)}&rangeType=${encodeURIComponent(rangeType)}&month=${encodeURIComponent(selectedMonth)}&year=${encodeURIComponent(selectedYear)}&fromMonth=${encodeURIComponent(customFrom)}&toMonth=${encodeURIComponent(customTo)}&status=${encodeURIComponent(status)}&opsOwner=${encodeURIComponent(opsOwner)}&sales=${encodeURIComponent(sales)}&province=${encodeURIComponent(province)}&keyword=${encodeURIComponent(keyword)}`;
+
+      const root = document.getElementById('recordList');
+      if (!range) {
+        root.innerHTML = '<div class="empty-state"><div class="empty-state__text">请调整为有效的自定义月份区间</div></div>';
+        return;
+      }
+      const rows = Utils.getFinanceRecordsByHotel(hotel.id)
+        .filter((r) => compareMonth(r.monthKey, range.start) >= 0 && compareMonth(r.monthKey, range.end) <= 0)
+        .sort((a, b) => b.monthKey.localeCompare(a.monthKey));
+      if (!rows.length) {
+        root.innerHTML = '<div class="empty-state"><div class="empty-state__text">当前区间暂无对账记录</div></div>';
+        return;
+      }
+
+      root.innerHTML = rows.map((r) => {
+        const effectiveDays = Utils.getEffectiveDaysInMonth(hotel.launchDate, r.monthKey);
+        const occupancy = Utils.calcFinanceOccupancyRate(r.settledNights, hotel.cooperationRooms, effectiveDays);
+        const avgRevenue = Utils.calcFinanceAvgRevenue(r.settlementAmount, hotel.cooperationRooms);
+        const href = `finance-data-entry-edit.html?role=${encodeURIComponent(role)}&id=${encodeURIComponent(hotel.id)}&recordMonth=${encodeURIComponent(r.monthKey)}&rangeType=${encodeURIComponent(rangeType)}&month=${encodeURIComponent(selectedMonth)}&year=${encodeURIComponent(selectedYear)}&fromMonth=${encodeURIComponent(customFrom)}&toMonth=${encodeURIComponent(customTo)}&status=${encodeURIComponent(status)}&opsOwner=${encodeURIComponent(opsOwner)}&sales=${encodeURIComponent(sales)}&province=${encodeURIComponent(province)}&keyword=${encodeURIComponent(keyword)}`;
+        return `
+          <a class="ops-record-card" href="${href}">
+            <div class="ops-record-card__head">
+              <div style="font-weight:700;">${r.monthKey}</div>
+              <span style="color:var(--text-placeholder);">›</span>
+            </div>
+            <div class="ops-record-room__meta">占房：${r.occupiedRooms} 间 · 结算间夜：${r.settledNights}</div>
+            <div class="ops-record-room__meta">结算金额：¥${Math.round(r.settlementAmount)} · 入住率：${Utils.formatPercent(occupancy)}</div>
+            <div class="ops-record-room__meta">平均单间收益：¥${Math.round(avgRevenue)} · 有效天数：${effectiveDays} 天</div>
+          </a>
+        `;
+      }).join('');
+    }
+
+    document.getElementById('rangeTabs').addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-range]');
+      if (!btn) return;
+      rangeType = btn.dataset.range;
+      render();
+    });
+    document.getElementById('monthPrevBtn').addEventListener('click', () => {
+      selectedMonth = shiftMonth(selectedMonth, -1);
+      render();
+    });
+    document.getElementById('monthNextBtn').addEventListener('click', () => {
+      selectedMonth = shiftMonth(selectedMonth, 1);
+      render();
+    });
+    document.getElementById('yearPrevBtn').addEventListener('click', () => {
+      selectedYear = String((Number(selectedYear) || new Date().getFullYear()) - 1);
+      render();
+    });
+    document.getElementById('yearNextBtn').addEventListener('click', () => {
+      selectedYear = String((Number(selectedYear) || new Date().getFullYear()) + 1);
+      render();
+    });
+    document.getElementById('customFrom').addEventListener('change', (e) => {
+      customFrom = e.target.value;
+      render();
+    });
+    document.getElementById('customTo').addEventListener('change', (e) => {
+      customTo = e.target.value;
+      render();
+    });
+
+    render();
+  </script>
+</body>
+</html>

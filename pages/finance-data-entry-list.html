@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>财务数据录入 - 奇趣XR酒店管理平台</title>
+  <link rel="stylesheet" href="../assets/css/theme.css?v=21">
+  <link rel="stylesheet" href="../assets/css/common.css?v=21">
+  <link rel="stylesheet" href="../assets/css/pages/ops.css?v=21">
+</head>
+<body>
+  <div class="app-wrapper">
+    <div id="header"></div>
+    <main class="page-content page-content--with-header">
+      <div class="ops-time-bar">
+        <div class="ops-time-tabs" id="rangeTabs">
+          <button class="ops-time-tab ops-time-tab--active" data-range="month">月</button>
+          <button class="ops-time-tab" data-range="year">年</button>
+          <button class="ops-time-tab" data-range="custom">自定义</button>
+        </div>
+        <div class="ops-period-switch" id="monthRow">
+          <button class="btn btn--ghost btn--sm" id="monthPrevBtn" type="button">‹</button>
+          <div class="ops-period-switch__label" id="monthLabel"></div>
+          <button class="btn btn--ghost btn--sm" id="monthNextBtn" type="button">›</button>
+        </div>
+        <div class="ops-period-switch" id="yearRow" style="display:none;">
+          <button class="btn btn--ghost btn--sm" id="yearPrevBtn" type="button">‹</button>
+          <div class="ops-period-switch__label" id="yearLabel"></div>
+          <button class="btn btn--ghost btn--sm" id="yearNextBtn" type="button">›</button>
+        </div>
+        <div class="ops-custom-date-row" id="customMonthRow" style="display:none;">
+          <input type="month" id="customFrom" class="form-input">
+          <span>至</span>
+          <input type="month" id="customTo" class="form-input">
+        </div>
+      </div>
+
+      <div class="ops-filter-row" id="filterRowTop">
+        <select class="form-select form-select--sm" id="statusFilter"></select>
+        <select class="form-select form-select--sm" id="provinceFilter"></select>
+      </div>
+      <div class="ops-filter-row" id="filterRowBottom">
+        <select class="form-select form-select--sm" id="opsFilter"></select>
+        <select class="form-select form-select--sm" id="salesFilter"></select>
+      </div>
+
+      <div class="search-bar" style="margin-bottom:var(--spacing-sm);">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+        <input type="text" id="searchInput" placeholder="搜索酒店名称">
+      </div>
+
+      <div class="ops-list-toolbar">
+        <div class="ops-summary" id="summaryText"></div>
+        <select class="form-select form-select--sm" id="sortFilter" style="max-width:180px;">
+          <option value="avgRevenue">按单间收益（高到低）</option>
+          <option value="settlementAmount">按结算金额（高到低）</option>
+          <option value="settledNights">按结算间夜（高到低）</option>
+          <option value="occupancyRate">按入住率（高到低）</option>
+        </select>
+      </div>
+      <div id="listRoot"></div>
+    </main>
+  </div>
+
+  <script src="../assets/js/mock/operations.js?v=21"></script>
+  <script src="../assets/js/utils.js?v=21"></script>
+  <script src="../assets/js/components/header.js?v=21"></script>
+  <script>
+    const role = (Utils.getUrlParam('role') || 'finance').trim();
+    Header.render('#header', {
+      title: '数据录入',
+      showBack: true,
+      backHref: `ops-board.html?role=${encodeURIComponent(role)}&ops=all`
+    });
+
+    let rangeType = (Utils.getUrlParam('rangeType') || 'month').trim();
+    if (!['month', 'year', 'custom'].includes(rangeType)) rangeType = 'month';
+    let selectedMonth = (Utils.getUrlParam('month') || new Date().toISOString().slice(0, 7)).trim();
+    let selectedYear = (Utils.getUrlParam('year') || selectedMonth.slice(0, 4)).trim();
+    let customFrom = (Utils.getUrlParam('fromMonth') || '').trim();
+    let customTo = (Utils.getUrlParam('toMonth') || '').trim();
+    let statusFilter = (Utils.getUrlParam('status') || 'all').trim();
+    let opsFilter = (Utils.getUrlParam('opsOwner') || 'all').trim();
+    let salesFilter = (Utils.getUrlParam('sales') || 'all').trim();
+    let provinceFilter = (Utils.getUrlParam('province') || 'all').trim();
+    let keyword = (Utils.getUrlParam('keyword') || '').trim();
+    let sortFilter = (Utils.getUrlParam('sort') || 'avgRevenue').trim();
+    if (!['avgRevenue', 'settlementAmount', 'settledNights', 'occupancyRate'].includes(sortFilter)) sortFilter = 'avgRevenue';
+
+    function monthRangeOfYear(year) {
+      return { start: `${year}-01`, end: `${year}-12` };
+    }
+
+    function shiftMonth(monthKey, step) {
+      const safe = /^\d{4}-\d{2}$/.test(monthKey) ? monthKey : new Date().toISOString().slice(0, 7);
+      const [y, m] = safe.split('-').map(Number);
+      const date = new Date(y, m - 1 + step, 1);
+      const nextY = date.getFullYear();
+      const nextM = String(date.getMonth() + 1).padStart(2, '0');
+      return `${nextY}-${nextM}`;
+    }
+
+    function compareMonth(a, b) {
+      return String(a || '').localeCompare(String(b || ''));
+    }
+
+    function inMonthRange(monthKey, range) {
+      if (!range) return true;
+      return compareMonth(monthKey, range.start) >= 0 && compareMonth(monthKey, range.end) <= 0;
+    }
+
+    function getCurrentRange() {
+      if (rangeType === 'month') return { start: selectedMonth, end: selectedMonth };
+      if (rangeType === 'year') return monthRangeOfYear(selectedYear);
+      if (!customFrom || !customTo) return null;
+      if (compareMonth(customFrom, customTo) > 0) return null;
+      return { start: customFrom, end: customTo };
+    }
+
+    function renderTabs() {
+      document.querySelectorAll('#rangeTabs .ops-time-tab').forEach((btn) => {
+        btn.classList.toggle('ops-time-tab--active', btn.dataset.range === rangeType);
+      });
+      document.getElementById('monthRow').style.display = rangeType === 'month' ? 'flex' : 'none';
+      document.getElementById('yearRow').style.display = rangeType === 'year' ? 'flex' : 'none';
+      document.getElementById('customMonthRow').style.display = rangeType === 'custom' ? 'flex' : 'none';
+      document.getElementById('statusFilter').style.display = rangeType === 'month' ? '' : 'none';
+      const filterRowTop = document.getElementById('filterRowTop');
+      const filterRowBottom = document.getElementById('filterRowBottom');
+      const provinceFilterEl = document.getElementById('provinceFilter');
+      if (rangeType === 'month') {
+        filterRowTop.style.display = '';
+        filterRowTop.classList.remove('ops-filter-row--single');
+        filterRowBottom.classList.remove('ops-filter-row--three');
+        if (provinceFilterEl.parentElement !== filterRowTop) filterRowTop.appendChild(provinceFilterEl);
+      } else {
+        filterRowTop.style.display = 'none';
+        filterRowBottom.classList.add('ops-filter-row--three');
+        if (provinceFilterEl.parentElement !== filterRowBottom) {
+          filterRowBottom.insertBefore(provinceFilterEl, document.getElementById('opsFilter'));
+        }
+      }
+    }
+
+    function getMonthState(hotel, records) {
+      const isLaunched = Utils.getEffectiveDaysInMonth(hotel.launchDate, selectedMonth) > 0;
+      const isRecorded = records.some((x) => String(x.hotelId) === String(hotel.id) && x.monthKey === selectedMonth);
+      if (!isLaunched) return 'unlaunched';
+      return isRecorded ? 'recorded' : 'unrecorded';
+    }
+
+    function buildHotelMetrics(hotel, records, range) {
+      const hotelRecords = records
+        .filter((r) => String(r.hotelId) === String(hotel.id))
+        .filter((r) => inMonthRange(r.monthKey, range))
+        .sort((a, b) => b.monthKey.localeCompare(a.monthKey));
+      const settledNights = hotelRecords.reduce((sum, x) => sum + (Number(x.settledNights) || 0), 0);
+      const settlementAmount = hotelRecords.reduce((sum, x) => sum + (Number(x.settlementAmount) || 0), 0);
+      const totalEffectiveDays = hotelRecords.reduce((sum, x) => sum + Utils.getEffectiveDaysInMonth(hotel.launchDate, x.monthKey), 0);
+      const occupancyRate = Utils.calcFinanceOccupancyRate(settledNights, hotel.cooperationRooms, totalEffectiveDays);
+      const avgRevenue = Utils.calcFinanceAvgRevenue(settlementAmount, hotel.cooperationRooms);
+      return {
+        settledNights,
+        settlementAmount,
+        totalEffectiveDays,
+        occupancyRate,
+        avgRevenue
+      };
+    }
+
+    function render() {
+      renderTabs();
+      const hotels = Utils.getFinanceHotels();
+      const records = Utils.getFinanceReconcileRecords();
+      const range = getCurrentRange();
+
+      // 省份口径收敛：仅保留 5 个省份（按酒店数量降序）
+      const provinceCountMap = hotels.reduce((acc, h) => {
+        const p = String(h.province || '').trim();
+        if (!p) return acc;
+        acc[p] = (acc[p] || 0) + 1;
+        return acc;
+      }, {});
+      const fixedProvinces = Object.keys(provinceCountMap)
+        .sort((a, b) => {
+          const diff = (provinceCountMap[b] || 0) - (provinceCountMap[a] || 0);
+          if (diff !== 0) return diff;
+          return a.localeCompare(b, 'zh-CN');
+        })
+        .slice(0, 5);
+      const scopedHotels = hotels.filter((h) => fixedProvinces.includes(String(h.province || '').trim()));
+
+      document.getElementById('searchInput').value = keyword;
+      document.getElementById('monthLabel').textContent = selectedMonth;
+      document.getElementById('yearLabel').textContent = `${selectedYear}年`;
+      document.getElementById('customFrom').value = customFrom;
+      document.getElementById('customTo').value = customTo;
+      document.getElementById('sortFilter').value = sortFilter;
+
+      const keywordFiltered = scopedHotels.filter((h) => !keyword || (h.hotelName || '').toLowerCase().includes(keyword.toLowerCase()));
+
+      const opsOptions = [...new Set(keywordFiltered.map((h) => h.ownerOps).filter(Boolean))];
+      const salesOptions = [...new Set(keywordFiltered.map((h) => h.ownerSales).filter(Boolean))];
+      const provinceOptions = [...new Set(keywordFiltered.map((h) => h.province).filter(Boolean))];
+
+      if (opsFilter !== 'all' && !opsOptions.includes(opsFilter)) opsFilter = 'all';
+      if (salesFilter !== 'all' && !salesOptions.includes(salesFilter)) salesFilter = 'all';
+      if (provinceFilter !== 'all' && !provinceOptions.includes(provinceFilter)) provinceFilter = 'all';
+
+      document.getElementById('opsFilter').innerHTML = `
+        <option value="all">运营（all）(${keywordFiltered.length})</option>
+        ${opsOptions.map((x) => `<option value="${x}">${x}(${keywordFiltered.filter((h) => h.ownerOps === x).length})</option>`).join('')}
+      `;
+      document.getElementById('salesFilter').innerHTML = `
+        <option value="all">销售（all）(${keywordFiltered.length})</option>
+        ${salesOptions.map((x) => `<option value="${x}">${x}(${keywordFiltered.filter((h) => h.ownerSales === x).length})</option>`).join('')}
+      `;
+      document.getElementById('provinceFilter').innerHTML = `
+        <option value="all">省份（all）(${keywordFiltered.length})</option>
+        ${provinceOptions.map((x) => `<option value="${x}">${x}(${keywordFiltered.filter((h) => h.province === x).length})</option>`).join('')}
+      `;
+      document.getElementById('opsFilter').value = opsFilter;
+      document.getElementById('salesFilter').value = salesFilter;
+      document.getElementById('provinceFilter').value = provinceFilter;
+
+      const list = keywordFiltered.filter((h) => {
+        const byOps = opsFilter === 'all' || h.ownerOps === opsFilter;
+        const bySales = salesFilter === 'all' || h.ownerSales === salesFilter;
+        const byProvince = provinceFilter === 'all' || h.province === provinceFilter;
+        return byOps && bySales && byProvince;
+      });
+      const currentMonthStatusCount = list.reduce((acc, hotel) => {
+        const state = getMonthState(hotel, records);
+        if (state === 'recorded') acc.recorded += 1;
+        else if (state === 'unrecorded') acc.unrecorded += 1;
+        else acc.unlaunched += 1;
+        return acc;
+      }, { recorded: 0, unrecorded: 0, unlaunched: 0 });
+      if (!['all', 'recorded', 'unrecorded', 'unlaunched'].includes(statusFilter)) statusFilter = 'all';
+      document.getElementById('statusFilter').innerHTML = `
+        <option value="all">录入状态（all）(${list.length})</option>
+        <option value="recorded">已录(${currentMonthStatusCount.recorded})</option>
+        <option value="unrecorded">未录(${currentMonthStatusCount.unrecorded})</option>
+        <option value="unlaunched">未上线(${currentMonthStatusCount.unlaunched})</option>
+      `;
+      document.getElementById('statusFilter').value = statusFilter;
+
+      const displayList = (rangeType === 'month' && statusFilter !== 'all')
+        ? list.filter((hotel) => {
+            const state = getMonthState(hotel, records);
+            return state === statusFilter;
+          })
+        : list;
+
+      const root = document.getElementById('listRoot');
+      if (!range) {
+        document.getElementById('summaryText').textContent = '请选择有效的自定义月份区间';
+        root.innerHTML = '<div class="empty-state"><div class="empty-state__icon">🗓️</div><div class="empty-state__text">自定义区间无效，请重新选择</div></div>';
+        return;
+      }
+
+      const visibleList = displayList
+        .map((h) => ({ hotel: h, metrics: buildHotelMetrics(h, records, range) }))
+        .filter(({ metrics }) => {
+          if (rangeType !== 'year') return true;
+          const hasSettlement = (Number(metrics.settlementAmount) || 0) > 0;
+          const hasNights = (Number(metrics.settledNights) || 0) > 0;
+          return hasSettlement || hasNights;
+        });
+
+      document.getElementById('summaryText').textContent = `共 ${visibleList.length} 家酒店`;
+      if (!visibleList.length) {
+        root.innerHTML = '<div class="empty-state"><div class="empty-state__icon">🏨</div><div class="empty-state__text">暂无符合条件的酒店</div></div>';
+        return;
+      }
+
+      const sortedList = visibleList
+        .sort((a, b) => {
+          const left = Number(a.metrics[sortFilter]) || 0;
+          const right = Number(b.metrics[sortFilter]) || 0;
+          return right - left;
+        });
+
+      root.innerHTML = sortedList.map(({ hotel: h, metrics }) => {
+        const monthState = getMonthState(h, records);
+        const {
+          settledNights,
+          settlementAmount,
+          totalEffectiveDays,
+          occupancyRate,
+          avgRevenue
+        } = metrics;
+        const detailHref = `finance-data-entry-detail.html?role=${encodeURIComponent(role)}&id=${encodeURIComponent(h.id)}&rangeType=${encodeURIComponent(rangeType)}&month=${encodeURIComponent(selectedMonth)}&year=${encodeURIComponent(selectedYear)}&fromMonth=${encodeURIComponent(customFrom)}&toMonth=${encodeURIComponent(customTo)}&status=${encodeURIComponent(statusFilter)}&opsOwner=${encodeURIComponent(opsFilter)}&sales=${encodeURIComponent(salesFilter)}&province=${encodeURIComponent(provinceFilter)}&keyword=${encodeURIComponent(keyword)}`;
+        return `
+          <a class="ops-hotel-item finance-entry-card" href="${detailHref}">
+            <div class="ops-hotel-item__head">
+              <div class="ops-hotel-item__name">${h.hotelName || '-'}</div>
+              <div style="display:flex;align-items:center;gap:6px;">
+                ${rangeType === 'month' ? `
+                  <span class="tag ${
+                    monthState === 'recorded'
+                      ? 'tag--success'
+                      : (monthState === 'unrecorded' ? 'tag--info' : 'tag--warning')
+                  }">${
+                    monthState === 'recorded'
+                      ? '已录'
+                      : (monthState === 'unrecorded' ? '未录' : '未上线')
+                  }</span>
+                ` : ''}
+                <span style="color:var(--text-placeholder);">›</span>
+              </div>
+            </div>
+            <div class="finance-base-row">运营：${h.ownerOps || '-'} · 销售：${h.ownerSales || '-'} · 合作间数：${h.cooperationRooms || 0} 间</div>
+            <div class="finance-kpi-grid finance-kpi-grid--three">
+              <div class="finance-kpi">
+                <div class="finance-kpi__label">有效天数</div>
+                <div class="finance-kpi__value">${totalEffectiveDays}<span class="finance-kpi__unit">天</span></div>
+              </div>
+              <div class="finance-kpi">
+                <div class="finance-kpi__label">结算间夜</div>
+                <div class="finance-kpi__value">${settledNights}</div>
+              </div>
+              <div class="finance-kpi finance-kpi--accent">
+                <div class="finance-kpi__label">入住率</div>
+                <div class="finance-kpi__value">${Utils.formatPercent(occupancyRate)}</div>
+              </div>
+            </div>
+            <div class="finance-kpi-grid finance-kpi-grid--two">
+              <div class="finance-kpi">
+                <div class="finance-kpi__label">结算金额</div>
+                <div class="finance-kpi__value"><span class="finance-kpi__unit">¥</span>${Math.round(settlementAmount).toLocaleString('zh-CN')}</div>
+              </div>
+              <div class="finance-kpi finance-kpi--accent">
+                <div class="finance-kpi__label">平均单间收益</div>
+                <div class="finance-kpi__value"><span class="finance-kpi__unit">¥</span>${Math.round(avgRevenue).toLocaleString('zh-CN')}</div>
+              </div>
+            </div>
+          </a>
+        `;
+      }).join('');
+    }
+
+    document.getElementById('rangeTabs').addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-range]');
+      if (!btn) return;
+      rangeType = btn.dataset.range;
+      render();
+    });
+    document.getElementById('monthPrevBtn').addEventListener('click', () => {
+      selectedMonth = shiftMonth(selectedMonth, -1);
+      render();
+    });
+    document.getElementById('monthNextBtn').addEventListener('click', () => {
+      selectedMonth = shiftMonth(selectedMonth, 1);
+      render();
+    });
+    document.getElementById('yearPrevBtn').addEventListener('click', () => {
+      selectedYear = String((Number(selectedYear) || new Date().getFullYear()) - 1);
+      render();
+    });
+    document.getElementById('yearNextBtn').addEventListener('click', () => {
+      selectedYear = String((Number(selectedYear) || new Date().getFullYear()) + 1);
+      render();
+    });
+    document.getElementById('customFrom').addEventListener('change', (e) => {
+      customFrom = e.target.value;
+      render();
+    });
+    document.getElementById('customTo').addEventListener('change', (e) => {
+      customTo = e.target.value;
+      render();
+    });
+    document.getElementById('searchInput').addEventListener('input', (e) => {
+      keyword = e.target.value.trim();
+      render();
+    });
+    document.getElementById('opsFilter').addEventListener('change', (e) => {
+      opsFilter = e.target.value;
+      render();
+    });
+    document.getElementById('salesFilter').addEventListener('change', (e) => {
+      salesFilter = e.target.value;
+      render();
+    });
+    document.getElementById('provinceFilter').addEventListener('change', (e) => {
+      provinceFilter = e.target.value;
+      render();
+    });
+    document.getElementById('statusFilter').addEventListener('change', (e) => {
+      statusFilter = e.target.value;
+      render();
+    });
+    document.getElementById('sortFilter').addEventListener('change', (e) => {
+      sortFilter = e.target.value;
+      render();
+    });
+
+    render();
+  </script>
+</body>
+</html>

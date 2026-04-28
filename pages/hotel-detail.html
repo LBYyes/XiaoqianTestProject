@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>酒店详情 - 奇趣庄园</title>
+  <link rel="stylesheet" href="../assets/css/theme.css?v=6">
+  <link rel="stylesheet" href="../assets/css/common.css?v=6">
+  <link rel="stylesheet" href="../assets/css/pages/hotel-detail.css?v=6">
+</head>
+<body>
+  <div class="app-wrapper">
+    <div id="header"></div>
+    <main class="page-content" style="padding:0;padding-top:var(--header-height);padding-bottom:calc(var(--tabbar-height) + var(--safe-bottom) + 72px);">
+      <div id="pageContent"></div>
+    </main>
+
+    <!-- 标记建档完成 footer（建档未完成时显示） -->
+    <div class="action-footer action-footer--above-tabbar" id="checkinDoneFooter" style="display:none;">
+      <div class="btn btn--primary btn--block btn--lg" id="checkinDoneBtn">标记建档完成</div>
+    </div>
+
+    <div class="modal-overlay" id="visitModal" style="display:none;" onclick="closeVisitModal(event)">
+      <div class="modal-sheet">
+        <div class="modal-sheet__title">
+          案例参观记录
+          <span class="modal-close" onclick="closeVisitModal()">×</span>
+        </div>
+        <div id="visitList"></div>
+        <div class="mt-lg">
+          <a class="btn btn--outline btn--block" id="addVisitBtn">+ 添加参观记录</a>
+        </div>
+      </div>
+    </div>
+
+    <div id="tabbar"></div>
+  </div>
+
+  <script src="../assets/js/mock/hotels.js?v=5"></script>
+  <script src="../assets/js/utils.js?v=4"></script>
+  <script src="../assets/js/components/header.js?v=4"></script>
+  <script src="../assets/js/components/tabbar.js?v=4"></script>
+  <script>
+    const STAGE_ORDER = ['screening', 'pitch', 'negotiate', 'contract'];
+    const STAGE_LABELS_MAP = { screening: '意向筛选', pitch: '产品讲解', negotiate: '合作模式', contract: '合同推进' };
+    const STATUS_LABEL = { empty: '未开始', progress: '进行中', done: '已完成' };
+
+    const FILE_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="20" height="20"><path d="M13 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>`;
+
+    const hotelId = Utils.getUrlParam('id');
+    let hotel = Utils.getHotelById(hotelId);
+
+    if (!hotel) {
+      document.getElementById('pageContent').innerHTML = '<div class="empty-state mt-xl"><div class="empty-state__icon">🏨</div><div class="empty-state__text">酒店不存在</div></div>';
+    } else {
+      try {
+        Header.render('#header', {
+          title: hotel.name,
+          showBack: true,
+          backHref: 'hotel-list.html'
+        });
+        TabBar.render('#tabbar', { active: 'list' });
+        renderPage();
+      } catch(e) {
+        document.getElementById('pageContent').innerHTML = `<div class="empty-state mt-xl"><div class="empty-state__icon">⚠️</div><div class="empty-state__text">加载失败：${e.message}</div></div>`;
+      }
+    }
+
+    // 建档是否完成：若 checkin 字段不存在（旧数据），视为已完成；只有 completed === false 才视为未完成
+    function isCheckinDone() {
+      const sd = hotel.stageData || {};
+      if (!sd.checkin) return true;
+      return sd.checkin.completed !== false;
+    }
+
+    function getStatus(h, stage) {
+      const sd = h.stageData || {};
+      if (stage === 'screening') {
+        if (sd.screening?.completed) return 'done';
+        if (sd.screening) return 'progress';
+        return 'empty';
+      }
+      if (stage === 'pitch') {
+        if (sd.pitch?.completed) return 'done';
+        if (sd.pitch?.sessions?.length > 0) return 'progress';
+        return 'empty';
+      }
+      if (stage === 'negotiate') {
+        if (sd.negotiate?.completed) return 'done';
+        if (sd.negotiate?.rounds?.length > 0) return 'progress';
+        return 'empty';
+      }
+      if (stage === 'contract') {
+        if (h.signedAt) return 'done';
+        if (sd.contract?.version) return 'progress';
+        return 'empty';
+      }
+      return 'empty';
+    }
+
+    function isLocked(stage) {
+      // 意向筛选：建档未完成则锁定
+      if (stage === 'screening') return !isCheckinDone();
+      const idx = STAGE_ORDER.indexOf(stage);
+      if (idx <= 0) return false;
+      return getStatus(hotel, STAGE_ORDER[idx - 1]) !== 'done';
+    }
+
+    function prevStageName(stage) {
+      if (stage === 'screening' && !isCheckinDone()) return '酒店建档';
+      const idx = STAGE_ORDER.indexOf(stage);
+      return idx > 0 ? STAGE_LABELS_MAP[STAGE_ORDER[idx - 1]] : '';
+    }
+
+    function stageSummary(stage) {
+      const sd = hotel.stageData || {};
+      if (stage === 'screening') {
+        if (sd.screening?.totalScore > 0) return `${sd.screening.totalScore}分 · ${Utils.screenResultShort(sd.screening.result)}`;
+        if (sd.screening) return '已录入，待标记完成';
+        return '暂无数据';
+      }
+      if (stage === 'pitch') {
+        const n = sd.pitch?.sessions?.length || 0;
+        return n > 0 ? `共 ${n} 次讲解记录` : '暂无数据';
+      }
+      if (stage === 'negotiate') {
+        const n = sd.negotiate?.rounds?.length || 0;
+        return n > 0 ? `共 ${n} 轮谈判` : '暂未开始谈判';
+      }
+      if (stage === 'contract') {
+        if (hotel.signedAt) return `双方已签约 · ${Utils.formatDate(hotel.signedAt)}`;
+        if (sd.contract?.version) return `${sd.contract.version} · ${sd.contract.reviewStatus === 'approved' ? '法务已审批' : '审核中'}`;
+        return '暂无数据';
+      }
+    }
+
+    function renderPage() {
+      const checkinDone = isCheckinDone();
+      const prog = Utils.getHotelProgress(hotel);
+      const sd = hotel.stageData || {};
+      let html = '';
+
+      if (hotel.signedAt) {
+        html += `<div class="signed-banner">🎉 合同已签约 · ${Utils.formatDate(hotel.signedAt)}</div>`;
+      }
+
+      html += `
+        <div class="detail-hero">
+          <div class="detail-hero__name">${hotel.name}</div>
+          <div class="detail-hero__tags">
+            <span class="tag tag--info">${hotel.cityTier}</span>
+            <span class="tag tag--info">${hotel.brand || '-'}</span>
+            <span class="tag tag--info">亲子房 ${hotel.kidsRooms} 间</span>
+          </div>
+          ${prog.score ? `<div class="detail-hero__score"><span class="tag tag--${Utils.screenResultTag(prog.result)}">${prog.score}分 · ${Utils.screenResultShort(prog.result)}</span></div>` : ''}
+          <div class="detail-hero__actions">
+            <div class="visit-badge ${prog.hasVisit ? '' : 'visit-badge--empty'}" onclick="openVisitModal()">
+              📍 ${prog.hasVisit ? `参观(${(sd.visit?.records || []).length}次)` : '添加案例参观'}
+            </div>
+          </div>
+        </div>
+      `;
+
+      html += '<div class="stage-card-list">';
+
+      // 建档卡片（第一张，始终显示）
+      const checkinSummary = checkinDone
+        ? `${hotel.brand || '-'} · ${hotel.cityTier} · 亲子房 ${hotel.kidsRooms} 间`
+        : '请完善酒店基本信息后标记完成';
+      html += `
+        <a class="stage-entry" href="hotel-edit.html?id=${hotel.id}">
+          <div class="stage-entry__left">
+            <div class="stage-entry__name">酒店建档</div>
+            <div class="stage-entry__summary">${checkinSummary}</div>
+          </div>
+          <div class="stage-entry__right">
+            <span class="status-badge status-badge--${checkinDone ? 'done' : 'progress'}">${checkinDone ? '已完成' : '进行中'}</span>
+            <span class="stage-entry__arrow">›</span>
+          </div>
+        </a>
+      `;
+
+      // 四个阶段卡片
+      STAGE_ORDER.forEach(stage => {
+        const locked = isLocked(stage);
+        const status = locked ? 'locked' : getStatus(hotel, stage);
+        const summary = locked ? `请先完成「${prevStageName(stage)}」后解锁` : stageSummary(stage);
+        const statusText = locked ? '🔒 未解锁' : STATUS_LABEL[status];
+        const badgeCls = locked ? 'locked' : status;
+
+        if (locked) {
+          html += `
+            <div class="stage-entry stage-entry--locked" onclick="showToast('请先完成「${prevStageName(stage)}」后再操作')">
+              <div class="stage-entry__left">
+                <div class="stage-entry__name">${STAGE_LABELS_MAP[stage]}</div>
+                <div class="stage-entry__summary">${summary}</div>
+              </div>
+              <div class="stage-entry__right">
+                <span class="status-badge status-badge--locked">${statusText}</span>
+              </div>
+            </div>
+          `;
+        } else {
+          // 意向筛选状态为空时直接跳表单，避免多余的空详情页
+          const stageHref = (stage === 'screening' && status === 'empty')
+            ? `stage-action.html?id=${hotel.id}&stage=${stage}`
+            : `stage-detail.html?id=${hotel.id}&stage=${stage}`;
+          html += `
+            <a class="stage-entry" href="${stageHref}">
+              <div class="stage-entry__left">
+                <div class="stage-entry__name">${STAGE_LABELS_MAP[stage]}</div>
+                <div class="stage-entry__summary">${summary}</div>
+              </div>
+              <div class="stage-entry__right">
+                <span class="status-badge status-badge--${badgeCls}">${statusText}</span>
+                <span class="stage-entry__arrow">›</span>
+              </div>
+            </a>
+          `;
+        }
+      });
+      html += '</div>';
+
+      document.getElementById('pageContent').innerHTML = html;
+      document.getElementById('addVisitBtn').href = `stage-action.html?id=${hotel.id}&stage=visit`;
+
+      // 建档未完成时显示底部"标记建档完成"按钮
+      if (!checkinDone) {
+        document.getElementById('checkinDoneFooter').style.display = 'block';
+        document.getElementById('checkinDoneBtn').addEventListener('click', markCheckinDone);
+      }
+    }
+
+    function markCheckinDone() {
+      const hotels = Utils.getAllHotels();
+      const h = hotels.find(x => x.id === Number(hotelId));
+      if (!h) return;
+      if (!h.stageData) h.stageData = {};
+      h.stageData.checkin = { completed: true };
+      h.updatedAt = new Date().toISOString().split('T')[0];
+      Utils.saveHotels(hotels);
+      window.location.href = `hotel-detail.html?id=${hotelId}`;
+    }
+
+    function showToast(msg) {
+      let t = document.getElementById('toastMsg');
+      if (!t) {
+        t = document.createElement('div');
+        t.id = 'toastMsg';
+        t.style.cssText = 'position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.78);color:#fff;padding:10px 20px;border-radius:20px;font-size:14px;z-index:9999;opacity:1;transition:opacity 0.3s;white-space:nowrap;';
+        document.body.appendChild(t);
+      }
+      t.textContent = msg;
+      t.style.opacity = '1';
+      clearTimeout(t._timer);
+      t._timer = setTimeout(() => { t.style.opacity = '0'; }, 2200);
+    }
+
+    function openVisitModal() {
+      const records = hotel.stageData?.visit?.records || [];
+      document.getElementById('visitList').innerHTML = records.length
+        ? records.map(r => `
+            <div class="session-card">
+              <div class="session-card__header">
+                <span class="session-card__title">${r.caseName}</span>
+                <span class="session-card__date">${Utils.formatDate(r.date)}</span>
+              </div>
+              <div class="session-card__body">
+                <div>参与者：${r.visitors || '-'}</div>
+                ${r.summary ? `<div style="margin-top:4px;">摘要：${r.summary}</div>` : ''}
+              </div>
+            </div>`).join('')
+        : '<div style="text-align:center;color:var(--text-placeholder);padding:24px 0;font-size:var(--font-sm);">暂无参观记录</div>';
+      document.getElementById('visitModal').style.display = 'flex';
+    }
+
+    function closeVisitModal(event) {
+      if (!event || event.target === document.getElementById('visitModal')) {
+        document.getElementById('visitModal').style.display = 'none';
+      }
+    }
+  </script>
+</body>
+</html>

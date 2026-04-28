@@ -1,0 +1,172 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>运营期 - 奇趣XR酒店管理平台</title>
+  <link rel="stylesheet" href="../assets/css/theme.css?v=77">
+  <link rel="stylesheet" href="../assets/css/common.css?v=77">
+  <link rel="stylesheet" href="../assets/css/pages/ops.css?v=77">
+</head>
+<body>
+  <div class="app-wrapper">
+    <div id="header"></div>
+    <main class="page-content page-content--with-header">
+      <div class="ops-identity">
+        <div class="ops-identity__title">当前运营：<span id="currentOps"></span></div>
+        <div class="ops-identity__switch" id="opsSwitch"></div>
+      </div>
+      <div class="ops-submodule-tabs filter-tabs" id="submoduleTabs"></div>
+      <div id="modulePanel"></div>
+    </main>
+  </div>
+
+  <script src="../assets/js/mock/operations.js?v=77"></script>
+  <script src="../assets/js/components/header.js?v=77"></script>
+  <script src="../assets/js/utils.js?v=77"></script>
+  <script>
+    const role = (Utils.getUrlParam('role') || 'ops').trim();
+    const isMiddleRole = role === 'middle';
+    const isFinanceRole = role === 'finance';
+    const isOpsRole = role === 'ops';
+    const currentOps = (Utils.getUrlParam('ops') || 'all').trim();
+    const opsIdentity = document.querySelector('.ops-identity');
+    const submoduleTabs = document.getElementById('submoduleTabs');
+    const panel = document.getElementById('modulePanel');
+
+    Header.render('#header', {
+      title: `${isMiddleRole ? '中台' : (isFinanceRole ? '财务' : '运营')} · 运营期`,
+      showBack: true,
+      backHref: `module-select.html?role=${encodeURIComponent(role)}`
+    });
+    if (opsIdentity) opsIdentity.style.display = 'none';
+    if (submoduleTabs) submoduleTabs.style.display = 'none';
+
+    function renderFeatureCard(item) {
+      if (item.enabled) {
+        return `
+          <a class="ops-feature-card" href="${item.href}">
+            <div class="ops-feature-card__main">
+              <div class="ops-feature-card__title">${item.title}</div>
+              <div class="ops-feature-card__desc">${item.desc}</div>
+            </div>
+            <div class="ops-feature-card__arrow">›</div>
+          </a>
+        `;
+      }
+      return `
+        <div class="ops-feature-card ops-feature-card--disabled">
+          <div class="ops-feature-card__main">
+            <div class="ops-feature-card__title">${item.title}</div>
+            <div class="ops-feature-card__desc">${item.desc}</div>
+          </div>
+          <span class="ops-feature-card__status">即将上线</span>
+        </div>
+      `;
+    }
+
+    if (isOpsRole) {
+      const cards = [
+        {
+          title: 'OTA巡检',
+          desc: '查看巡检结果并提交异常处理完毕申请',
+          href: `ops-ota-list.html?role=${encodeURIComponent(role)}&ops=${encodeURIComponent(currentOps || '王莉')}`,
+          enabled: true
+        },
+        {
+          title: '酒店档案管理',
+          desc: '暂未开放',
+          enabled: false
+        },
+        {
+          title: '收益管理',
+          desc: '暂未开放',
+          enabled: false
+        },
+        {
+          title: '种草监控',
+          desc: '暂未开放',
+          enabled: false
+        },
+        {
+          title: '线下运营',
+          desc: '暂未开放',
+          enabled: false
+        }
+      ];
+      panel.innerHTML = cards.map(renderFeatureCard).join('');
+    } else if (isFinanceRole) {
+      const cards = [
+        {
+          title: '酒店档案管理',
+          desc: '复审中台提交档案，支持确认与修改提交',
+          href: `finance-hotel-manage-list.html?role=${encodeURIComponent(role)}`,
+          enabled: true
+        },
+        {
+          title: 'OTA巡检',
+          desc: '暂未开放',
+          enabled: false
+        },
+        {
+          title: '收益管理',
+          desc: '暂未开放',
+          enabled: false
+        },
+        {
+          title: '种草监控',
+          desc: '暂未开放',
+          enabled: false
+        },
+        {
+          title: '线下运营',
+          desc: '暂未开放',
+          enabled: false
+        }
+      ];
+      panel.innerHTML = cards.map(renderFeatureCard).join('');
+    } else if (isMiddleRole) {
+      const cards = [
+        {
+          title: '酒店档案管理',
+          desc: '维护酒店基础信息、销售、运营与渠道配置',
+          href: `ops-hotel-manage-list.html?role=${encodeURIComponent(role)}&ops=all`,
+          enabled: true
+        },
+        {
+          title: 'OTA巡检',
+          desc: '巡检上架情况与异常明细',
+          href: `ops-ota-list.html?role=${encodeURIComponent(role)}&ops=all`,
+          enabled: true
+        },
+        {
+          title: '收益管理',
+          desc: '月度收益与周维度渠道明细',
+          href: `ops-revenue-list.html?role=${encodeURIComponent(role)}`,
+          enabled: true
+        },
+        {
+          title: '种草监控',
+          desc: '矩阵号发布频次、曝光、互动与关键词热度监控',
+          href: `ops-seed-monitor-list.html?role=${encodeURIComponent(role)}`,
+          enabled: true
+        },
+        {
+          title: '线下运营',
+          desc: '升级券、好评与全员营销报表',
+          href: `ops-offline-list.html?role=${encodeURIComponent(role)}`,
+          enabled: true
+        }
+      ];
+      panel.innerHTML = cards.map(renderFeatureCard).join('');
+    } else {
+      panel.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state__icon">⚠️</div>
+          <div class="empty-state__text">角色参数异常</div>
+        </div>
+      `;
+    }
+  </script>
+</body>
+</html>

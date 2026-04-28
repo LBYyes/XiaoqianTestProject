@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>OTA数据看板 - 奇趣XR酒店管理平台</title>
+  <link rel="stylesheet" href="../assets/css/theme.css?v=17">
+  <link rel="stylesheet" href="../assets/css/common.css?v=17">
+  <link rel="stylesheet" href="../assets/css/pages/ops.css?v=65">
+</head>
+<body>
+  <div class="app-wrapper">
+    <div id="header"></div>
+    <main class="page-content page-content--with-header">
+      <div class="ops-time-bar">
+        <div class="ops-time-tabs" id="viewTabs" style="display:none;margin-bottom:8px;">
+          <button class="ops-time-tab ops-time-tab--active" data-view="big">大盘</button>
+          <button class="ops-time-tab" data-view="compare">运营对比</button>
+        </div>
+        <div class="ops-time-tabs" id="timeTabs">
+          <button class="ops-time-tab" data-range="day">日</button>
+          <button class="ops-time-tab ops-time-tab--active" data-range="week">周</button>
+          <button class="ops-time-tab" data-range="month">月</button>
+        </div>
+        <div class="ops-period-switch" id="periodSwitch">
+          <button class="btn btn--ghost btn--sm" id="prevPeriodBtn" type="button">‹ 上一段</button>
+          <div class="ops-period-switch__label" id="periodLabel"></div>
+          <button class="btn btn--ghost btn--sm" id="nextPeriodBtn" type="button">下一段 ›</button>
+        </div>
+        <div class="ops-custom-date-row" id="customDateRow" style="display:none;">
+          <input type="date" class="form-input" id="dateFrom">
+          <span>至</span>
+          <input type="date" class="form-input" id="dateTo">
+        </div>
+      </div>
+      <section class="ops-dashboard-card" id="compareOpsSelector" style="display:none;"></section>
+
+      <section class="ops-dashboard-card">
+        <div class="ops-dashboard-card__head">
+          <div class="ops-dashboard-card__title">概览</div>
+          <div class="ops-dashboard-card__desc" id="kpiDesc"></div>
+        </div>
+        <div class="ops-kpi-grid ops-kpi-grid--four" id="kpiGrid"></div>
+      </section>
+
+      <section class="ops-dashboard-card" id="trendSection">
+        <div class="ops-dashboard-card__head">
+          <div class="ops-dashboard-card__title" id="trendTitle">监控数据</div>
+          <div class="ops-dashboard-card__desc" id="trendDesc"></div>
+        </div>
+        <div class="ops-chart" id="dailyTrendChart"></div>
+        <div class="ops-compliance-panel" id="compliancePanel">
+          <div class="ops-compliance-panel__head">
+            <div class="ops-compliance-tabs" id="complianceTabs">
+              <button class="ops-compliance-tab ops-compliance-tab--active" data-mode="uncompliant">监控未达标</button>
+              <button class="ops-compliance-tab" data-mode="compliant">监控达标</button>
+            </div>
+            <a class="text-link" id="viewFullCompliance">查看完整列表</a>
+          </div>
+          <div class="ops-compliance-panel__body" id="complianceList"></div>
+        </div>
+      </section>
+
+      <section class="ops-dashboard-card" id="abnormalSection">
+        <div class="ops-dashboard-card__head ops-dashboard-card__head--with-tabs">
+          <div>
+            <div class="ops-dashboard-card__title">异常分布</div>
+            <div class="ops-dashboard-card__desc" id="abnormalDesc"></div>
+          </div>
+          <div class="ops-switch-tabs" id="abnormalTabs">
+            <button class="ops-switch-tab ops-switch-tab--active" data-tab="province">省份分布</button>
+            <button class="ops-switch-tab" data-tab="hotel">酒店分布</button>
+          </div>
+        </div>
+        <div id="provincePanel">
+          <div id="provinceTable"></div>
+        </div>
+        <div id="hotelPanel" style="display:none;">
+          <div id="rankList"></div>
+          <a class="btn btn--ghost btn--block" id="toMonitorList">查看全部上架监控</a>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+  <script src="../assets/js/mock/operations.js?v=65"></script>
+  <script src="../assets/js/utils.js?v=65"></script>
+  <script src="../assets/js/components/header.js?v=17"></script>
+  <script>
+    const role = (Utils.getUrlParam('role') || 'ops').trim();
+    const isMiddleRole = role === 'middle';
+    const isCrossOpsRole = isMiddleRole;
+    const currentOps = (Utils.getUrlParam('ops') || (isCrossOpsRole ? 'all' : '王莉')).trim();
+    const viewFromUrl = (Utils.getUrlParam('view') || '').trim();
+    let currentView = ['big', 'compare'].includes(viewFromUrl) ? viewFromUrl : 'big';
+    if (!isMiddleRole) currentView = 'big';
+    Header.render('#header', {
+      title: 'OTA运营 · 数据看板',
+      showBack: true,
+      backHref: `ops-board.html?role=${encodeURIComponent(role)}&sub=ota&ops=${encodeURIComponent(currentOps)}`
+    });
+
+    const WEEK_TARGET_DAYS = 2;
+    const rangeFromUrl = (Utils.getUrlParam('range') || '').trim();
+    let currentRange = ['day', 'week', 'month'].includes(rangeFromUrl) ? rangeFromUrl : 'week';
+    const refFromUrl = (Utils.getUrlParam('ref') || '').trim();
+    let referenceDate = /^\d{4}-\d{2}-\d{2}$/.test(refFromUrl) ? toDate(refFromUrl) : new Date();
+    let complianceMode = 'uncompliant';
+    let latestRows = [];
+    let trendChart = null;
+    let selectedCompareOps = [];
+    let currentAbnormalTab = 'province';
+
+    document.querySelectorAll('#timeTabs .ops-time-tab').forEach((btn) => {
+      btn.classList.toggle('ops-time-tab--active', btn.dataset.range === currentRange);
+    });
+    if (isMiddleRole) {
+      document.getElementById('viewTabs').style.display = 'flex';
+      document.querySelectorAll('#viewTabs .ops-time-tab').forEach((btn) => {
+        btn.classList.toggle('ops-time-tab--active', btn.dataset.view === currentView);
+      });
+    }
+
+    function toDate(dateStr) {
+      return new Date(`${dateStr}T00:00:00`);
+    }
+
+    function formatDateStr(date) {
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, '0');
+      const d = String(date.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
+
+    function addDays(dateStr, days) {
+      const date = toDate(dateStr);
+      date.setDate(date.getDate() + days);
+      return formatDateStr(date);
+    }
+
+    function getWeekStart(dateStr) {
+      const date = toDate(dateStr);
+      const day = date.getDay();
+      const diff = day === 0 ? 6 : day - 1;
+      date.setDate(date.getDate() - diff);
+      return formatDateStr(date);
+    }
+
+    function getMonthRange(dateStr) {
+      const date = toDate(dateStr);
+      const y = date.getFullYear();
+      const m = date.getMonth();
+      const start = new Date(y, m, 1);
+      const end = new Date(y, m + 1, 0);
+      return { start: formatDateStr(start), end: formatDateStr(end) };
+    }
+
+    function getDateRange() {
+      const anchor = formatDateStr(referenceDate);
+      if (currentRange === 'day') return { start: anchor, end: anchor };
+      if (currentRange === 'week') {
+        const start = getWeekStart(anchor);
+        return { start, end: addDays(start, 6) };
+      }
+      return getMonthRange(anchor);
+    }
+
+    function inRange(dateStr, range) {
+      if (!range) return true;
+      return dateStr >= range.start && dateStr <= range.end;
+    }
+
+    function collectDateKeys(range) {
+      if (!range) return [];
+      const days = [];
+      let cursor = range.start;
+      while (cursor <= range.end) {
+        days.push(cursor);
+        cursor = addDays(cursor, 1);
+      }
+      return days;
+    }
+
+    function collectWeekKeys(range) {
+      if (!range) return [];
+      const keys = [];
+      let cursor = getWeekStart(range.start);
+      const last = getWeekStart(range.end);
+      while (cursor <= last) {
+        keys.push(cursor);
+        cursor = addDays(cursor, 7);
+      }
+      return keys;
+    }
+
+    function rangeLabel(range) {
+      if (!range) return '';
+      if (currentRange === 'day') return Utils.formatDate(range.start);
+      if (currentRange === 'week') {
+        return `${Utils.formatDate(range.start)} - ${Utils.formatDate(range.end)}`;
+      }
+      if (currentRange === 'month') {
+        const date = toDate(range.start);
+        return `${date.getFullYear()}年${date.getMonth() + 1}月`;
+      }
+      return `${Utils.formatDate(range.start)} - ${Utils.formatDate(range.end)}`;
+    }
+
+    function dashboardQuery() {
+      const ref = formatDateStr(referenceDate);
+      const viewPart = isMiddleRole ? `&view=${encodeURIComponent(currentView)}` : '';
+      return `from=dashboard&range=${encodeURIComponent(currentRange)}&ref=${encodeURIComponent(ref)}${viewPart}`;
+    }
+
+    function buildSummaryByHotel(hotel, records, range, weekKeys) {
+      const monitorRecords = records.filter((r) => r.hotelId === hotel.id && inRange(r.date, range));
+      const monitorDayMap = {};
+      monitorRecords.forEach((record) => {
+        if (!monitorDayMap[record.date]) monitorDayMap[record.date] = [];
+        monitorDayMap[record.date].push(record);
+      });
+      const targetRate = Number(hotel.targetPremiumRate) || 0;
+      const recordedDays = Object.keys(monitorDayMap).length;
+      let listingAbnormalDays = 0;
+      let premiumAbnormalDays = 0;
+      let abnormalDays = 0;
+      const weekDayCountMap = {};
+      const allDays = Object.keys(monitorDayMap);
+
+      allDays.forEach((day) => {
+        const weekKey = getWeekStart(day);
+        if (monitorDayMap[day]) {
+          weekDayCountMap[weekKey] = (weekDayCountMap[weekKey] || 0) + 1;
+        }
+
+        const dayRecords = monitorDayMap[day] || [];
+        const recordedChannels = new Set(dayRecords.map((x) => x.channel));
+        const missingChannels = dayRecords.length ? (hotel.channels || []).some((x) => !recordedChannels.has(x)) : false;
+        let hasNotListed = false;
+        let hasPremiumHigh = false;
+
+        dayRecords.forEach((rec) => {
+          (rec.roomInputs || []).forEach((room) => {
+            if (room.status === 'not_listed') hasNotListed = true;
+            if (room.status !== 'not_listed') {
+              const premiumRate = Utils.calcPremiumRate(room.salePrice, room.basePrice);
+              if (premiumRate > targetRate) hasPremiumHigh = true;
+            }
+          });
+        });
+        const listingAbnormal = missingChannels || hasNotListed;
+        const premiumAbnormal = hasPremiumHigh;
+        if (listingAbnormal) listingAbnormalDays++;
+        if (premiumAbnormal) premiumAbnormalDays++;
+        if (listingAbnormal || premiumAbnormal) abnormalDays++;
+      });
+
+      const allWeeksCompliant = weekKeys.length
+        ? weekKeys.every((week) => (weekDayCountMap[week] || 0) >= WEEK_TARGET_DAYS)
+        : false;
+      const missingDaysToComply = weekKeys.reduce((sum, week) => {
+        const days = weekDayCountMap[week] || 0;
+        return sum + Math.max(0, WEEK_TARGET_DAYS - days);
+      }, 0);
+
+      return {
+        recordedDays,
+        listingAbnormalDays,
+        premiumAbnormalDays,
+        abnormalDays,
+        weekDayCountMap,
+        isMonitored: recordedDays > 0,
+        isCompliant: allWeeksCompliant,
+        missingDaysToComply
+      };
+    }
+
+    function renderCompareOpsSelector(opsNames) {
+      const root = document.getElementById('compareOpsSelector');
+      if (!isMiddleRole || currentView !== 'compare') {
+        root.style.display = 'none';
+        return;
+      }
+      if (!selectedCompareOps.length) {
+        selectedCompareOps = [...opsNames];
+      } else {
+        selectedCompareOps = selectedCompareOps.filter((x) => opsNames.includes(x));
+        if (!selectedCompareOps.length) selectedCompareOps = [...opsNames];
+      }
+      root.style.display = 'block';
+      root.innerHTML = `
+        <div class="ops-dashboard-card__head ops-dashboard-card__head--inline">
+          <div class="ops-dashboard-card__title">运营筛选</div>
+          <button class="btn btn--ghost btn--sm ops-compare-select-all" id="compareSelectAll" type="button">全选</button>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;" id="compareOpsChecks">
+          ${opsNames.map((name) => `
+            <label class="tag ${selectedCompareOps.includes(name) ? 'tag--primary' : 'tag--info'}" style="display:flex;gap:6px;align-items:center;cursor:pointer;">
+              <input type="checkbox" data-ops="${name}" ${selectedCompareOps.includes(name) ? 'checked' : ''}>
+              <span>${name}</span>
+            </label>
+          `).join('')}
+        </div>
+      `;
+      document.getElementById('compareSelectAll').addEventListener('click', () => {
+        selectedCompareOps = [...opsNames];
+        analyze();
+      });
+      root.querySelectorAll('input[type="checkbox"]').forEach((input) => {
+        input.addEventListener('change', () => {
+          const name = input.dataset.ops;
+          if (input.checked) {
+            if (!selectedCompareOps.includes(name)) selectedCompareOps.push(name);
+          } else {
+            selectedCompareOps = selectedCompareOps.filter((x) => x !== name);
+            if (!selectedCompareOps.length) selectedCompareOps = [name];
+          }
+          analyze();
+        });
+      });
+    }
+
+    function renderCompareOverview(rowsByOps) {
+      const grid = document.getElementById('kpiGrid');
+      grid.classList.add('ops-kpi-grid--table-mode');
+      const opsRows = Object.keys(rowsByOps).sort();
+      if (!opsRows.length) {
+        grid.innerHTML = '<div class="empty-state"><div class="empty-state__text">未选择运营</div></div>';
+        return;
+      }
+      grid.innerHTML = `
+        <div class="ops-table-wrap ops-overview-table-wrap">
+          <table class="ops-table ops-overview-table">
+            <thead>
+              <tr>
+                <th>运营</th>
+                <th>酒店总数</th>
+                <th>上架异常</th>
+                <th>溢价异常</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${opsRows.map((name) => {
+                const rows = rowsByOps[name];
+                const total = rows.length;
+                const listing = rows.filter((x) => x.summary.listingAbnormalDays > 0).length;
+                const premium = rows.filter((x) => x.summary.premiumAbnormalDays > 0).length;
+                return `
+                  <tr>
+                    <td class="ops-overview-table__ops">${name}</td>
+                    <td>${total}</td>
+                    <td><span class="text-danger">${listing}</span></td>
+                    <td><span style="color:var(--color-warning);">${premium}</span></td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    function renderKpiCards(kpis) {
+      const grid = document.getElementById('kpiGrid');
+      grid.classList.remove('ops-kpi-grid--table-mode');
+      if (currentRange === 'day') {
+        grid.innerHTML = `
+          <div class="ops-kpi-card">
+            <div class="ops-kpi-card__label">酒店总数</div>
+            <div class="ops-kpi-card__value">${kpis.totalHotels}</div>
+            <div class="ops-kpi-card__sub">当日已监控 ${kpis.monitoredHotels} 家</div>
+          </div>
+          <div class="ops-kpi-card ${kpis.listingAbnormalHotels > 0 ? 'is-danger' : 'is-success'}">
+            <div class="ops-kpi-card__label">上架异常</div>
+            <div class="ops-kpi-card__value">${kpis.listingAbnormalHotels}</div>
+            <div class="ops-kpi-card__sub">占比 ${Utils.formatPercent(kpis.listingAbnormalRate)}</div>
+          </div>
+          <div class="ops-kpi-card ${kpis.premiumAbnormalHotels > 0 ? 'is-warning' : 'is-success'}">
+            <div class="ops-kpi-card__label">溢价异常</div>
+            <div class="ops-kpi-card__value">${kpis.premiumAbnormalHotels}</div>
+            <div class="ops-kpi-card__sub">占比 ${Utils.formatPercent(kpis.premiumAbnormalRate)}</div>
+          </div>
+          <div class="ops-kpi-card ${kpis.rankingAbnormalHotels > 0 ? 'is-danger' : 'is-success'}">
+            <div class="ops-kpi-card__label">排名异常</div>
+            <div class="ops-kpi-card__value">${kpis.rankingAbnormalHotels}</div>
+            <div class="ops-kpi-card__sub">占比 ${Utils.formatPercent(kpis.rankingAbnormalRate)}</div>
+          </div>
+        `;
+        return;
+      }
+
+      grid.innerHTML = `
+        <div class="ops-kpi-card ${kpis.compliantRate < 0.5 ? 'is-danger' : (kpis.compliantRate < 0.8 ? 'is-warning' : 'is-success')}">
+          <div class="ops-kpi-card__label">酒店总数</div>
+          <div class="ops-kpi-card__value">${kpis.totalHotels}</div>
+          <div class="ops-kpi-card__sub">监控达标 ${kpis.compliantHotels} 家</div>
+          <div class="ops-kpi-card__sub ops-kpi-card__sub--rate">
+            达标率 ${Utils.formatPercent(kpis.compliantRate)}
+            <span class="ops-kpi-help" title="每周至少监控2天算达标">?</span>
+          </div>
+        </div>
+        <div class="ops-kpi-card ${kpis.listingAbnormalHotels > 0 ? 'is-danger' : 'is-success'}">
+          <div class="ops-kpi-card__label">上架异常</div>
+          <div class="ops-kpi-card__value">${kpis.listingAbnormalHotels}</div>
+          <div class="ops-kpi-card__sub">占比 ${Utils.formatPercent(kpis.listingAbnormalRate)}</div>
+        </div>
+        <div class="ops-kpi-card ${kpis.premiumAbnormalHotels > 0 ? 'is-warning' : 'is-success'}">
+          <div class="ops-kpi-card__label">溢价异常</div>
+          <div class="ops-kpi-card__value">${kpis.premiumAbnormalHotels}</div>
+          <div class="ops-kpi-card__sub">占比 ${Utils.formatPercent(kpis.premiumAbnormalRate)}</div>
+        </div>
+        <div class="ops-kpi-card ${kpis.rankingAbnormalHotels > 0 ? 'is-danger' : 'is-success'}">
+          <div class="ops-kpi-card__label">排名异常</div>
+          <div class="ops-kpi-card__value">${kpis.rankingAbnormalHotels}</div>
+          <div class="ops-kpi-card__sub">占比 ${Utils.formatPercent(kpis.rankingAbnormalRate)}</div>
+        </div>
+      `;
+    }
+
+    function renderDailyTrend(dateRows) {
+      if (!trendChart) trendChart = echarts.init(document.getElementById('dailyTrendChart'));
+      trendChart.setOption({
+        color: ['#2f80ed'],
+        tooltip: { trigger: 'axis' },
+        grid: { left: 28, right: 16, top: 46, bottom: 24, containLabel: true },
+        xAxis: {
+          type: 'category',
+          data: dateRows.map((x) => x.label),
+          axisLabel: { fontSize: 11 }
+        },
+        yAxis: { type: 'value', minInterval: 1, name: '酒店数' },
+        series: [
+          {
+            type: 'bar',
+            barWidth: 18,
+            data: dateRows.map((x) => x.monitoredHotels)
+          }
+        ]
+      });
+    }
+
+    function renderProvinceTable(rows) {
+      const root = document.getElementById('provinceTable');
+      if (!rows.length) {
+        root.innerHTML = '<div class="empty-state"><div class="empty-state__text">暂无省份数据</div></div>';
+        return;
+      }
+      root.innerHTML = `
+        <div class="ops-table-wrap">
+          <table class="ops-table">
+            <thead>
+              <tr>
+                <th>省份</th>
+                <th>正常</th>
+                <th>上架异常</th>
+                <th>溢价异常</th>
+                <th>双重异常</th>
+                <th>异常占比</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.map((x) => {
+                const total = x.normal + x.listingOnly + x.premiumOnly + x.both;
+                const abnormalCount = x.listingOnly + x.premiumOnly + x.both;
+                const abnormalRate = total ? abnormalCount / total : 0;
+                return `
+                  <tr data-province="${x.province}">
+                    <td>${x.province}</td>
+                    <td><span class="text-success">${x.normal}</span></td>
+                    <td><span class="text-danger">${x.listingOnly}</span></td>
+                    <td><span style="color:var(--color-warning);">${x.premiumOnly}</span></td>
+                    <td><span style="color:#b42318;">${x.both}</span></td>
+                    <td>${Utils.formatPercent(abnormalRate)}</td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      `;
+      root.querySelectorAll('tbody tr').forEach((tr) => {
+        tr.addEventListener('click', () => {
+          const province = tr.dataset.province;
+          window.location.href = `ops-ota-list.html?role=${encodeURIComponent(role)}&ops=${encodeURIComponent(isCrossOpsRole ? 'all' : currentOps)}&province=${encodeURIComponent(province)}&${dashboardQuery()}`;
+        });
+      });
+    }
+
+    function renderComplianceList() {
+      const panel = document.getElementById('compliancePanel');
+      const body = document.getElementById('complianceList');
+      if (currentRange === 'day' || (isMiddleRole && currentView === 'compare')) {
+        panel.style.display = 'none';
+        return;
+      }
+      panel.style.display = 'block';
+      const source = complianceMode === 'uncompliant'
+        ? latestRows.filter((x) => !x.summary.isCompliant)
+        : latestRows.filter((x) => x.summary.isCompliant);
+      const rows = source
+        .sort((a, b) => {
+          if (complianceMode === 'uncompliant') return b.summary.missingDaysToComply - a.summary.missingDaysToComply;
+          return b.summary.recordedDays - a.summary.recordedDays;
+        })
+        .slice(0, 6);
+      if (!rows.length) {
+        body.innerHTML = `<div class="ops-compliance-item is-success">${complianceMode === 'uncompliant' ? '当前无监控未达标酒店' : '当前无监控达标酒店'}</div>`;
+        return;
+      }
+      body.innerHTML = rows.map((x) => `
+        <a class="ops-compliance-item" href="ops-ota-detail.html?id=${x.hotel.id}&role=${encodeURIComponent(role)}&ops=${encodeURIComponent(isCrossOpsRole ? 'all' : currentOps)}&back=dashboard&${dashboardQuery()}">
+          <div class="ops-compliance-item__name">${x.hotel.name}</div>
+          <div class="ops-compliance-item__meta">${x.hotel.province} · 监控 ${x.summary.recordedDays} 天${complianceMode === 'uncompliant' ? ` · 缺失 ${x.summary.missingDaysToComply} 天` : ''}</div>
+        </a>
+      `).join('');
+    }
+
+    function renderRankList(rows) {
+      const root = document.getElementById('rankList');
+      if (currentRange === 'day') {
+        root.innerHTML = '';
+        return;
+      }
+      if (!rows.length) {
+        root.innerHTML = '<div class="empty-state"><div class="empty-state__text">当前范围暂无异常酒店</div></div>';
+        return;
+      }
+      root.innerHTML = rows.map((x, idx) => {
+        const typeLabel = x.summary.listingAbnormalDays > 0 && x.summary.premiumAbnormalDays > 0
+          ? '双重异常'
+          : (x.summary.listingAbnormalDays > 0 ? '上架异常' : '溢价异常');
+        const typeClass = x.summary.listingAbnormalDays > 0 ? 'tag--danger' : 'tag--warning';
+        return `
+          <a class="ops-rank-item" href="ops-ota-detail.html?id=${x.hotel.id}&role=${encodeURIComponent(role)}&ops=${encodeURIComponent(isCrossOpsRole ? 'all' : currentOps)}&back=dashboard&${dashboardQuery()}">
+            <div class="ops-rank-item__left">
+              <div class="ops-rank-item__index">${idx + 1}</div>
+              <div class="ops-rank-item__main">
+                <div class="ops-rank-item__name">${x.hotel.name}</div>
+                <div class="ops-rank-item__meta">${x.hotel.province}${isMiddleRole && currentView === 'compare' ? ` · 运营 ${x.hotel.ownerOps}` : ''} · 异常天数 ${x.summary.abnormalDays} / 监控天数 ${x.summary.recordedDays} · 异常率 ${Utils.formatPercent(x.rate)}</div>
+              </div>
+            </div>
+            <div class="ops-rank-item__right">
+              <span class="tag ${typeClass}">${typeLabel}</span>
+            </div>
+          </a>
+        `;
+      }).join('');
+    }
+
+    function renderPeriodSwitch(range) {
+      const switchEl = document.getElementById('periodSwitch');
+      const customRow = document.getElementById('customDateRow');
+      switchEl.style.display = 'flex';
+      customRow.style.display = 'none';
+      document.getElementById('periodLabel').textContent = rangeLabel(range);
+    }
+
+    function analyze() {
+      const range = getDateRange();
+
+      renderPeriodSwitch(range);
+
+      const hotels = Utils.getOpsHotels().filter((x) => {
+        if (isCrossOpsRole) return true;
+        return x.ownerOps === currentOps;
+      });
+      const opsNames = [...new Set(hotels.map((x) => x.ownerOps).filter(Boolean))];
+      renderCompareOpsSelector(opsNames);
+      const records = Utils.getOpsRecords();
+      const dateKeys = collectDateKeys(range);
+      const weekKeys = collectWeekKeys(range);
+
+      let rows = hotels.map((hotel) => ({
+        hotel,
+        summary: buildSummaryByHotel(hotel, records, range, weekKeys)
+      }));
+      if (isMiddleRole && currentView === 'compare') {
+        rows = rows.filter((x) => selectedCompareOps.includes(x.hotel.ownerOps));
+      }
+      latestRows = rows;
+
+      const totalHotels = rows.length;
+      const monitoredHotels = rows.filter((x) => x.summary.isMonitored).length;
+      const compliantHotels = rows.filter((x) => x.summary.isCompliant).length;
+      const listingAbnormalHotels = rows.filter((x) => x.summary.listingAbnormalDays > 0).length;
+      const premiumAbnormalHotels = rows.filter((x) => x.summary.premiumAbnormalDays > 0).length;
+      const rankingAbnormalHotels = rows.filter((x) => x.hotel && Utils.getOpsPatrolSummaryByChannel(x.hotel).some((c) => c.rankingStatus === 'abnormal')).length;
+
+      if (isMiddleRole && currentView === 'compare') {
+        document.getElementById('kpiDesc').textContent = '';
+        const rowsByOps = {};
+        rows.forEach((x) => {
+          if (!rowsByOps[x.hotel.ownerOps]) rowsByOps[x.hotel.ownerOps] = [];
+          rowsByOps[x.hotel.ownerOps].push(x);
+        });
+        renderCompareOverview(rowsByOps);
+      } else {
+        document.getElementById('kpiDesc').textContent = '';
+        renderKpiCards({
+          totalHotels,
+          monitoredHotels,
+          compliantHotels,
+          compliantRate: totalHotels ? compliantHotels / totalHotels : 0,
+          listingAbnormalHotels,
+          premiumAbnormalHotels,
+          listingAbnormalRate: totalHotels ? listingAbnormalHotels / totalHotels : 0,
+          premiumAbnormalRate: totalHotels ? premiumAbnormalHotels / totalHotels : 0,
+          rankingAbnormalHotels,
+          rankingAbnormalRate: totalHotels ? rankingAbnormalHotels / totalHotels : 0
+        });
+      }
+
+      const dateRows = dateKeys.map((day) => {
+        const monitored = new Set(
+          records
+            .filter((r) => r.date === day)
+            .map((r) => r.hotelId)
+        );
+        return {
+          day,
+          label: `${toDate(day).getMonth() + 1}/${toDate(day).getDate()}`,
+          monitoredHotels: rows.filter((x) => monitored.has(Number(x.hotel.id))).length
+        };
+      });
+
+      document.getElementById('trendTitle').textContent = '每日监控趋势';
+      document.getElementById('trendDesc').textContent = currentRange === 'day'
+        ? '日维度仅展示当日快照，不展示未达标分析'
+        : `${rangeLabel(range)} 每天监控酒店数`;
+
+      document.getElementById('trendSection').style.display = (currentRange === 'day' || (isMiddleRole && currentView === 'compare')) ? 'none' : 'block';
+
+      if (currentRange === 'week') {
+        document.getElementById('trendTitle').textContent = '监控数据';
+        document.getElementById('trendDesc').textContent = `${rangeLabel(range)} 每天监控酒店数`;
+        renderDailyTrend(dateRows);
+      } else if (currentRange === 'month') {
+        const weekRows = collectWeekKeys(range).map((weekStart) => {
+          const weekEnd = addDays(weekStart, 6);
+          const monitoredSet = new Set(
+            records
+              .filter((r) => r.date >= weekStart && r.date <= weekEnd && inRange(r.date, range))
+              .map((r) => r.hotelId)
+          );
+          const startDate = toDate(weekStart);
+          const endDate = toDate(weekEnd);
+          return {
+            label: `${startDate.getMonth() + 1}/${startDate.getDate()}-${endDate.getMonth() + 1}/${endDate.getDate()}`,
+            monitoredHotels: rows.filter((x) => monitoredSet.has(Number(x.hotel.id))).length
+          };
+        });
+        document.getElementById('trendTitle').textContent = '监控数据';
+        document.getElementById('trendDesc').textContent = `${rangeLabel(range)} 每周监控酒店数`;
+        renderDailyTrend(weekRows);
+      }
+      renderComplianceList();
+
+      const canShowProvinceTab = !(isMiddleRole && currentView === 'compare');
+      const canShowHotelTab = currentRange !== 'day';
+      const abnormalSection = document.getElementById('abnormalSection');
+      const provinceTab = document.querySelector('#abnormalTabs [data-tab="province"]');
+      const hotelTab = document.querySelector('#abnormalTabs [data-tab="hotel"]');
+      const availableTabs = [];
+
+      provinceTab.style.display = canShowProvinceTab ? 'inline-flex' : 'none';
+      hotelTab.style.display = canShowHotelTab ? 'inline-flex' : 'none';
+      if (canShowProvinceTab) availableTabs.push('province');
+      if (canShowHotelTab) availableTabs.push('hotel');
+
+      if (!availableTabs.length) {
+        abnormalSection.style.display = 'none';
+      } else {
+        abnormalSection.style.display = 'block';
+        if (!availableTabs.includes(currentAbnormalTab)) {
+          currentAbnormalTab = availableTabs[0];
+        }
+      }
+
+      document.querySelectorAll('#abnormalTabs .ops-switch-tab').forEach((tab) => {
+        tab.classList.toggle('ops-switch-tab--active', tab.dataset.tab === currentAbnormalTab);
+      });
+      document.getElementById('provincePanel').style.display = currentAbnormalTab === 'province' ? 'block' : 'none';
+      document.getElementById('hotelPanel').style.display = currentAbnormalTab === 'hotel' ? 'block' : 'none';
+      document.getElementById('abnormalDesc').textContent = currentAbnormalTab === 'province'
+        ? '按省份查看异常结构，数字代表酒店数量'
+        : '按酒店查看异常分布（Top 10），优先定位高风险酒店';
+
+      const provinceMap = {};
+      rows.forEach((x) => {
+        if (!x.summary.isMonitored) return;
+        const province = x.hotel.province || '未知';
+        if (!provinceMap[province]) {
+          provinceMap[province] = { province, normal: 0, listingOnly: 0, premiumOnly: 0, both: 0 };
+        }
+        const hasListing = x.summary.listingAbnormalDays > 0;
+        const hasPremium = x.summary.premiumAbnormalDays > 0;
+        if (!hasListing && !hasPremium) provinceMap[province].normal++;
+        else if (hasListing && hasPremium) provinceMap[province].both++;
+        else if (hasListing) provinceMap[province].listingOnly++;
+        else provinceMap[province].premiumOnly++;
+      });
+      if (canShowProvinceTab) {
+        renderProvinceTable(
+          Object.values(provinceMap).sort((a, b) => ((b.listingOnly + b.premiumOnly + b.both) - (a.listingOnly + a.premiumOnly + a.both)))
+        );
+      }
+
+      if (currentRange !== 'day') {
+        renderRankList(
+          rows
+            .map((x) => ({ ...x, rate: x.summary.recordedDays ? x.summary.abnormalDays / x.summary.recordedDays : 0 }))
+            .filter((x) => x.summary.abnormalDays > 0)
+            .sort((a, b) => b.rate - a.rate || b.summary.abnormalDays - a.summary.abnormalDays)
+            .slice(0, 10)
+        );
+      }
+
+      document.getElementById('toMonitorList').href = `ops-ota-list.html?role=${encodeURIComponent(role)}&ops=${encodeURIComponent(isCrossOpsRole ? 'all' : currentOps)}&${dashboardQuery()}${isMiddleRole ? `&view=${encodeURIComponent(currentView)}` : ''}`;
+    }
+
+    function shiftPeriod(step) {
+      if (currentRange === 'day') {
+        referenceDate.setDate(referenceDate.getDate() + step);
+      } else if (currentRange === 'week') {
+        referenceDate.setDate(referenceDate.getDate() + step * 7);
+      } else if (currentRange === 'month') {
+        referenceDate.setMonth(referenceDate.getMonth() + step);
+      }
+      analyze();
+    }
+
+    document.getElementById('timeTabs').addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-range]');
+      if (!btn) return;
+      document.querySelectorAll('#timeTabs .ops-time-tab').forEach((x) => x.classList.remove('ops-time-tab--active'));
+      btn.classList.add('ops-time-tab--active');
+      currentRange = btn.dataset.range;
+      referenceDate = new Date();
+      analyze();
+    });
+    document.getElementById('complianceTabs').addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-mode]');
+      if (!btn) return;
+      complianceMode = btn.dataset.mode;
+      document.querySelectorAll('.ops-compliance-tab').forEach((x) => x.classList.remove('ops-compliance-tab--active'));
+      btn.classList.add('ops-compliance-tab--active');
+      renderComplianceList();
+    });
+    if (isMiddleRole) {
+      document.getElementById('viewTabs').addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-view]');
+        if (!btn) return;
+        currentView = btn.dataset.view;
+        document.querySelectorAll('#viewTabs .ops-time-tab').forEach((x) => x.classList.remove('ops-time-tab--active'));
+        btn.classList.add('ops-time-tab--active');
+        analyze();
+      });
+    }
+    document.getElementById('abnormalTabs').addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-tab]');
+      if (!btn || btn.style.display === 'none') return;
+      currentAbnormalTab = btn.dataset.tab;
+      analyze();
+    });
+    document.getElementById('viewFullCompliance').addEventListener('click', () => {
+      window.location.href = `ops-ota-compliance-list.html?role=${encodeURIComponent(role)}&ops=${encodeURIComponent(isCrossOpsRole ? 'all' : currentOps)}&mode=${encodeURIComponent(complianceMode)}&${dashboardQuery()}`;
+    });
+    document.getElementById('prevPeriodBtn').addEventListener('click', () => shiftPeriod(-1));
+    document.getElementById('nextPeriodBtn').addEventListener('click', () => shiftPeriod(1));
+
+    window.addEventListener('resize', () => {
+      if (trendChart) trendChart.resize();
+    });
+
+    analyze();
+  </script>
+</body>
+</html>

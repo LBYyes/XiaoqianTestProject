@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>模块选择 - 奇趣XR酒店管理平台</title>
+  <link rel="stylesheet" href="../assets/css/theme.css?v=8">
+  <link rel="stylesheet" href="../assets/css/common.css?v=8">
+  <link rel="stylesheet" href="../assets/css/pages/module-select.css?v=8">
+</head>
+<body>
+  <div class="app-wrapper">
+    <div id="header"></div>
+    <main class="page-content page-content--with-header">
+      <div class="module-role-title" id="roleTitle">角色</div>
+      <div class="module-role-subtitle">请选择当前工作模块</div>
+
+      <div class="module-grid" id="moduleGrid"></div>
+    </main>
+  </div>
+
+  <script src="../assets/js/components/header.js?v=8"></script>
+  <script src="../assets/js/utils.js?v=8"></script>
+  <script>
+    const role = (Utils.getUrlParam('role') || '').trim();
+    const ROLE_LABEL_MAP = {
+      sales: '销售',
+      ops: '运营',
+      middle: '中台',
+      finance: '财务'
+    };
+
+    const MODULE_RULES = {
+      sales: [
+        { name: '签约期', desc: '销售签约跟进管理', href: 'sales-board.html', enabled: true },
+        { name: '运营期', desc: '当前角色暂不可用', href: 'placeholder.html', enabled: false }
+      ],
+      ops: [
+        { name: '签约期', desc: '当前角色暂不可用', href: 'placeholder.html', enabled: false },
+        { name: '运营期', desc: 'OTA巡检与异常处理协作', href: 'ops-board.html?role=ops&ops=王莉', enabled: true }
+      ],
+      middle: [
+        { name: '签约期', desc: '即将开放', href: 'placeholder.html', enabled: false },
+        { name: '运营期', desc: '酒店档案管理与运营模块', href: 'ops-board.html?role=middle&ops=all', enabled: true }
+      ],
+      finance: [
+        { name: '签约期', desc: '当前角色暂不可用', href: 'placeholder.html', enabled: false },
+        { name: '运营期', desc: '酒店档案管理与复审', href: 'ops-board.html?role=finance&ops=all', enabled: true }
+      ]
+    };
+
+    const roleLabel = ROLE_LABEL_MAP[role] || '角色';
+    document.getElementById('roleTitle').textContent = `${roleLabel} · 模块选择`;
+    Header.render('#header', { title: '奇趣XR酒店管理平台', showBack: true, backHref: '../index.html' });
+
+    const modules = MODULE_RULES[role] || MODULE_RULES.middle;
+    document.getElementById('moduleGrid').innerHTML = modules.map((m) => `
+      <a class="module-card ${m.enabled ? '' : 'module-card--disabled'}" href="${m.href}">
+        <div class="module-card__name">${m.name}</div>
+        <div class="module-card__desc">${m.desc}</div>
+      </a>
+    `).join('');
+  </script>
+</body>
+</html>

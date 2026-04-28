@@ -1,0 +1,70 @@
+:root {
+  /* 品牌色 - 蓝色系 */
+  --color-primary: #1D6FE6;
+  --color-primary-light: #4A8FEF;
+  --color-primary-dark: #1558C0;
+  --color-primary-bg: #EEF4FD;
+
+  /* 功能色 */
+  --color-success: #22C55E;
+  --color-success-bg: #F0FDF4;
+  --color-warning: #F59E0B;
+  --color-warning-bg: #FFFBEB;
+  --color-danger: #EF4444;
+  --color-danger-bg: #FEF2F2;
+  --color-info: #3B82F6;
+  --color-info-bg: #EFF6FF;
+
+  /* 背景色 */
+  --bg-page: #F5F6FA;
+  --bg-card: #FFFFFF;
+  --bg-input: #F7F8FC;
+  --bg-disabled: #E5E7EB;
+
+  /* 文字色 */
+  --text-primary: #1F2937;
+  --text-secondary: #6B7280;
+  --text-placeholder: #9CA3AF;
+  --text-white: #FFFFFF;
+
+  /* 边框 */
+  --border-color: #E5E7EB;
+  --border-light: #F3F4F6;
+
+  /* 圆角 */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+  --radius-full: 999px;
+
+  /* 间距 */
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 12px;
+  --spacing-lg: 16px;
+  --spacing-xl: 20px;
+  --spacing-2xl: 24px;
+  --spacing-3xl: 32px;
+
+  /* 字号 */
+  --font-xs: 11px;
+  --font-sm: 13px;
+  --font-md: 15px;
+  --font-lg: 17px;
+  --font-xl: 20px;
+  --font-2xl: 24px;
+  --font-3xl: 28px;
+
+  /* 阴影 */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.1);
+
+  /* 安全区域 */
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+
+  /* TabBar 高度 */
+  --tabbar-height: 56px;
+  --header-height: 48px;
+}

@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>我的 - 奇趣庄园</title>
+  <link rel="stylesheet" href="../assets/css/theme.css?v=5">
+  <link rel="stylesheet" href="../assets/css/common.css?v=5">
+  <style>
+    .mine-avatar {
+      width: 72px; height: 72px; border-radius: 50%;
+      background: var(--color-primary-bg);
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 auto 12px;
+    }
+    .mine-name { font-size: var(--font-xl); font-weight: 700; text-align: center; }
+    .mine-role { font-size: var(--font-sm); color: var(--text-secondary); text-align: center; margin-top: 4px; }
+    .mine-item {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: var(--spacing-md) 0;
+      font-size: var(--font-sm);
+      cursor: pointer;
+      border-bottom: 1px solid var(--border-light);
+    }
+    .mine-item:last-child { border-bottom: none; }
+    .mine-item__label { display: flex; align-items: center; gap: 8px; }
+    .mine-item__arrow { color: var(--text-placeholder); font-size: 16px; }
+    .btn--danger { background: #EF4444; color: #fff; border-color: transparent; }
+    .btn--danger:active { background: #DC2626; }
+    /* modal */
+    .modal-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+      z-index: 200; display: flex; align-items: flex-end;
+    }
+    .modal-sheet {
+      background: var(--bg-card);
+      border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+      width: 100%; max-width: 500px; margin: 0 auto;
+      padding: var(--spacing-2xl) var(--spacing-lg) calc(var(--spacing-2xl) + var(--safe-bottom));
+    }
+    .modal-sheet__title { font-size: var(--font-lg); font-weight: 700; margin-bottom: var(--spacing-lg); }
+    .modal-desc { font-size: var(--font-sm); color: var(--text-secondary); margin-bottom: var(--spacing-2xl); line-height: 1.6; }
+  </style>
+</head>
+<body>
+  <div class="app-wrapper">
+    <div id="header"></div>
+    <main class="page-content">
+
+      <div style="padding: 32px 0 20px; text-align:center;">
+        <div class="mine-avatar">
+          <svg viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" stroke-width="2" width="36" height="36">
+            <circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 4-7 8-7s8 3 8 7"/>
+          </svg>
+        </div>
+        <div class="mine-name">销售专�?/div>
+        <div class="mine-role">奇趣庄园 · 内部账号</div>
+      </div>
+
+      <div class="card">
+        <div class="card__title">开发工�?/div>
+        <div class="mine-item" id="resetBtn">
+          <div class="mine-item__label">🔄 重置演示数据</div>
+          <span class="mine-item__arrow">�?/span>
+        </div>
+      </div>
+
+      <div style="text-align:center; padding: 28px 0; color: var(--text-placeholder); font-size: var(--font-xs);">
+        奇趣庄园原型 · v0.5
+      </div>
+    </main>
+
+    <div id="tabbar"></div>
+  </div>
+
+  <!-- 确认弹窗 -->
+  <div class="modal-overlay" id="confirmModal" style="display:none;" onclick="closeConfirm(event)">
+    <div class="modal-sheet">
+      <div class="modal-sheet__title">重置演示数据</div>
+      <div class="modal-desc">将清除所有已保存的数据，恢复为初始演示状态。此操作不可撤销�?/div>
+      <div class="btn btn--danger btn--block btn--lg" onclick="doReset()">确认重置</div>
+      <div class="btn btn--outline btn--block mt-lg" onclick="closeConfirm()">取消</div>
+    </div>
+  </div>
+
+  <script src="../assets/js/mock/hotels.js?v=5"></script>
+  <script src="../assets/js/utils.js?v=4"></script>
+  <script src="../assets/js/components/header.js?v=4"></script>
+  <script src="../assets/js/components/tabbar.js?v=4"></script>
+  <script>
+    Header.render('#header', { title: '我的', showBack: false });
+    TabBar.render('#tabbar', { active: 'mine' });
+
+    document.getElementById('resetBtn').addEventListener('click', () => {
+      document.getElementById('confirmModal').style.display = 'flex';
+    });
+
+    function doReset() {
+      localStorage.removeItem('hotels_data');
+      closeConfirm();
+      showToast('演示数据已重�?�?);
+      setTimeout(() => { window.location.href = 'sales-board.html'; }, 1500);
+    }
+
+    function closeConfirm(event) {
+      if (!event || event.target === document.getElementById('confirmModal')) {
+        document.getElementById('confirmModal').style.display = 'none';
+      }
+    }
+
+    function showToast(msg) {
+      let t = document.getElementById('toastMsg');
+      if (!t) {
+        t = document.createElement('div');
+        t.id = 'toastMsg';
+        t.style.cssText = 'position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.78);color:#fff;padding:10px 20px;border-radius:20px;font-size:14px;z-index:9999;white-space:nowrap;';
+        document.body.appendChild(t);
+      }
+      t.textContent = msg;
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,75 @@
+.role-page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: var(--spacing-2xl);
+  background: linear-gradient(135deg, #FFF5F0 0%, #FFFFFF 50%, #FFF0E6 100%);
+}
+
+.role-page__logo {
+  font-size: var(--font-3xl);
+  font-weight: 700;
+  color: var(--color-primary);
+  margin-bottom: var(--spacing-sm);
+}
+
+.role-page__subtitle {
+  font-size: var(--font-sm);
+  color: var(--text-secondary);
+  margin-bottom: var(--spacing-3xl);
+}
+
+.role-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--spacing-lg);
+  width: 100%;
+  max-width: 320px;
+}
+
+.role-card {
+  background: var(--bg-card);
+  border-radius: var(--radius-xl);
+  padding: var(--spacing-2xl) var(--spacing-lg);
+  text-align: center;
+  box-shadow: var(--shadow-md);
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.role-card:active {
+  transform: scale(0.96);
+}
+
+.role-card--disabled {
+  opacity: 0.5;
+}
+
+.role-card__icon {
+  width: 48px;
+  height: 48px;
+  margin: 0 auto var(--spacing-md);
+  border-radius: var(--radius-lg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+}
+
+.role-card__icon--sales { background: var(--color-primary-bg); }
+.role-card__icon--ops { background: var(--color-success-bg); }
+.role-card__icon--middle { background: var(--color-warning-bg); }
+.role-card__icon--finance { background: var(--color-info-bg); }
+
+.role-card__name {
+  font-size: var(--font-md);
+  font-weight: 600;
+}
+
+.role-card__desc {
+  font-size: var(--font-xs);
+  color: var(--text-secondary);
+  margin-top: var(--spacing-xs);
+}

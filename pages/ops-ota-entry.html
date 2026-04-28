@@ -1,0 +1,428 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>OTA巡检录入 - 奇趣XR酒店管理平台</title>
+  <link rel="stylesheet" href="../assets/css/theme.css?v=19">
+  <link rel="stylesheet" href="../assets/css/common.css?v=19">
+  <link rel="stylesheet" href="../assets/css/pages/ops.css?v=77">
+</head>
+<body>
+  <div class="app-wrapper">
+    <div id="header"></div>
+    <main class="page-content page-content--with-header" style="padding-bottom:calc(var(--tabbar-height) + var(--safe-bottom) + 72px);">
+      <div id="formRoot"></div>
+    </main>
+    <div class="action-footer action-footer--above-tabbar">
+      <div class="btn btn--primary btn--block btn--lg" id="saveBtn">保存巡检</div>
+    </div>
+  </div>
+
+  <script src="../assets/js/mock/operations.js?v=77"></script>
+  <script src="../assets/js/utils.js?v=77"></script>
+  <script src="../assets/js/components/header.js?v=19"></script>
+  <script>
+    const hotelId = Number(Utils.getUrlParam('id'));
+    const role = (Utils.getUrlParam('role') || 'middle').trim();
+    const isMiddleRole = role === 'middle';
+    const currentOps = (Utils.getUrlParam('ops') || (isMiddleRole ? 'all' : '王莉')).trim();
+    const abnormalParam = (Utils.getUrlParam('abnormal') || '').trim();
+    const opsOwnerParam = (Utils.getUrlParam('opsOwner') || '').trim();
+    const provinceParam = (Utils.getUrlParam('province') || '').trim();
+    const keywordParam = (Utils.getUrlParam('keyword') || '').trim();
+    const sortParam = (Utils.getUrlParam('sort') || '').trim();
+    const viewParam = (Utils.getUrlParam('view') || 'card').trim();
+    const recordId = (Utils.getUrlParam('recordId') || '').trim();
+    const editDate = Utils.getUrlParam('date');
+    const editChannel = Utils.getUrlParam('channel');
+    const hotel = Utils.getOpsHotelById(hotelId);
+    const byDateCh = (editDate && editChannel)
+      ? Utils.getOpsRecords().filter((item) =>
+        Number(item.hotelId) === hotelId && item.date === editDate && item.channel === editChannel
+      )
+      : [];
+    const existingRecord = recordId
+      ? (Utils.getOpsRecords().find((item) => String(item.id) === recordId) || null)
+      : (byDateCh.length === 1 ? byDateCh[0] : null);
+    const detailBackQuery = `&role=${encodeURIComponent(role)}&ops=${encodeURIComponent(currentOps)}&abnormal=${encodeURIComponent(abnormalParam || 'all')}&opsOwner=${encodeURIComponent(opsOwnerParam)}&province=${encodeURIComponent(provinceParam)}&keyword=${encodeURIComponent(keywordParam)}&sort=${encodeURIComponent(sortParam)}&view=${encodeURIComponent(viewParam)}`;
+    const selectedRoomImages = {};
+    const existingRoomImageNames = {};
+    const existingRoomImageItems = {};
+    let selectedRankingScreenshot = null;
+    let selectedPresaleScreenshot = null;
+
+    Header.render('#header', {
+      title: existingRecord ? '编辑巡检' : 'OTA巡检录入',
+      showBack: true,
+      backHref: `ops-ota-detail.html?id=${hotelId}${detailBackQuery}`
+    });
+
+    if (!hotel) {
+      document.getElementById('formRoot').innerHTML = '<div class="empty-state"><div class="empty-state__icon">🏨</div><div class="empty-state__text">酒店不存在</div></div>';
+      document.getElementById('saveBtn').style.display = 'none';
+    } else if (!isMiddleRole && hotel.ownerOps !== currentOps) {
+      document.getElementById('formRoot').innerHTML = '<div class="empty-state"><div class="empty-state__icon">🔒</div><div class="empty-state__text">仅可查看本人负责酒店</div></div>';
+      document.getElementById('saveBtn').style.display = 'none';
+    } else {
+      renderForm();
+      if (isMiddleRole) {
+        document.getElementById('saveBtn').addEventListener('click', saveRecord);
+      } else {
+        const saveBtn = document.getElementById('saveBtn');
+        saveBtn.textContent = '仅查看，不可保存';
+        saveBtn.classList.add('btn--disabled');
+      }
+    }
+
+    function renderForm() {
+      const isReadOnly = !isMiddleRole;
+      const allChannels = [...new Set([...(hotel.channels || []), ...(existingRecord?.channel ? [existingRecord.channel] : [])])];
+      document.getElementById('formRoot').innerHTML = `
+        <div class="card mb-md">
+          <div class="card__title">${hotel.name}</div>
+          <div class="text-secondary">${hotel.province} · 运营：${hotel.ownerOps || '-'} · 销售：${hotel.ownerSales || '-'}</div>
+        </div>
+        <div class="card">
+          <div class="form-group">
+            <label class="form-label form-label--required">巡检日期</label>
+            <input type="date" id="recordDate" class="form-input" value="${existingRecord?.date || new Date().toISOString().split('T')[0]}">
+          </div>
+          <div class="form-group">
+            <label class="form-label form-label--required">巡检渠道</label>
+            <select class="form-select" id="channelSelect">
+              ${allChannels.map((channel) => `<option value="${channel}">${Utils.channelLabel(channel)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">排名名次</label>
+            <input type="number" id="rankingPosition" class="form-input" min="1" step="1" value="${existingRecord?.rankingPosition || ''}" placeholder="请输入名次（1-5正常，>5异常）">
+            <div class="ops-rate-tip">未填写时在列表显示“未填写”</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">排名截图（非必填）</label>
+            <input class="form-input" id="rankingScreenshot" type="file" accept="image/*" style="padding-top:10px;">
+            <div class="ops-upload-preview" id="rankingPreview"></div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">预售套餐标题</label>
+            <input type="text" id="presalePackageTitle" class="form-input" maxlength="50" value="${existingRecord?.presalePackageTitle || ''}" placeholder="最多50字">
+          </div>
+          <div class="form-group">
+            <label class="form-label">预售套餐截图（非必填）</label>
+            <input class="form-input" id="presaleScreenshot" type="file" accept="image/*" style="padding-top:10px;">
+            <div class="ops-upload-preview" id="presalePreview"></div>
+          </div>
+          <div id="roomsBox"></div>
+        </div>
+      `;
+      const roomInputMap = {};
+      (existingRecord?.roomInputs || []).forEach((row) => { roomInputMap[row.roomTypeId] = row; });
+      document.getElementById('channelSelect').value = existingRecord?.channel || allChannels[0];
+      document.getElementById('channelSelect').disabled = !!existingRecord;
+
+      document.getElementById('roomsBox').innerHTML = hotel.roomTypes.map((roomType, idx) => {
+        const oldInput = roomInputMap[roomType.id] || {};
+        const status = oldInput.status || 'on_sale';
+        const basePrice = Number(oldInput.basePrice ?? roomType.basePrice) || 0;
+        const salePrice = Number(oldInput.salePrice) || Math.round(basePrice * (1 + (hotel.targetPremiumRate || 0)));
+        existingRoomImageNames[idx] = oldInput.imageNames || [];
+        existingRoomImageItems[idx] = oldInput.imageItems || [];
+        return `
+          <div class="ops-room-row">
+            <div class="ops-room-row__name">${roomType.name}</div>
+            <div class="ops-grid-2">
+              <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">上架状态</label>
+                <select class="form-select room-status" data-idx="${idx}">
+                  <option value="on_sale" ${status === 'on_sale' ? 'selected' : ''}>在售</option>
+                  <option value="sold_out" ${status === 'sold_out' ? 'selected' : ''}>售罄</option>
+                  <option value="not_listed" ${status === 'not_listed' ? 'selected' : ''}>未上架</option>
+                </select>
+              </div>
+              <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">基础价</label>
+                <input class="form-input room-base" data-idx="${idx}" type="number" value="${basePrice}">
+              </div>
+            </div>
+            <div class="form-group" style="margin-top:var(--spacing-sm);margin-bottom:0;">
+              <label class="form-label">销售价</label>
+              <input class="form-input room-sale" data-idx="${idx}" type="number" value="${salePrice}">
+            </div>
+            <div class="form-group" style="margin-top:var(--spacing-sm);margin-bottom:0;">
+              <label class="form-label">上传图片（非必填）</label>
+              <input class="form-input room-images" data-idx="${idx}" type="file" accept="image/*" multiple style="padding-top:10px;">
+            </div>
+            <div class="ops-upload-preview" id="uploadPreview_${idx}"></div>
+            <div class="ops-rate-tip" id="rateTip_${idx}"></div>
+          </div>
+        `;
+      }).join('');
+
+      if (!isReadOnly) {
+        document.querySelectorAll('.room-status,.room-base,.room-sale').forEach((el) => {
+          el.addEventListener('change', refreshRateTips);
+          el.addEventListener('input', refreshRateTips);
+        });
+        document.querySelectorAll('.room-images').forEach((el) => {
+          el.addEventListener('change', handleImagesChange);
+        });
+        document.getElementById('rankingScreenshot').addEventListener('change', handleRankingScreenshotChange);
+        document.getElementById('presaleScreenshot').addEventListener('change', handlePresaleScreenshotChange);
+      }
+      hotel.roomTypes.forEach((_, idx) => {
+        const previewEl = document.getElementById(`uploadPreview_${idx}`);
+        const oldNames = existingRoomImageNames[idx] || [];
+        const oldItems = existingRoomImageItems[idx] || [];
+        if (oldItems.length) {
+          previewEl.innerHTML = oldItems.map((item) => `
+            <div class="ops-upload-preview__item">
+              ${item.url ? `<img src="${item.url}" alt="${item.name || '图片'}">` : ''}
+              <span>${item.name || '图片'}</span>
+            </div>
+          `).join('');
+        } else {
+          previewEl.innerHTML = oldNames.length
+            ? oldNames.map((name) => `<div class="ops-upload-preview__item"><span>${name}</span></div>`).join('')
+            : '<span class="text-secondary">未选择图片</span>';
+        }
+      });
+      renderSingleImagePreview('rankingPreview', existingRecord?.rankingScreenshot || '', selectedRankingScreenshot);
+      renderSingleImagePreview('presalePreview', existingRecord?.presaleScreenshot || '', selectedPresaleScreenshot);
+      refreshRateTips();
+      if (isReadOnly) {
+        document.querySelectorAll('#formRoot input, #formRoot select, #formRoot textarea').forEach((el) => {
+          el.disabled = true;
+        });
+      }
+    }
+
+    function renderSingleImagePreview(containerId, existingUrl, selectedFile) {
+      const container = document.getElementById(containerId);
+      if (!container) return;
+      if (selectedFile) {
+        container.innerHTML = `
+          <div class="ops-upload-preview__item">
+            <img src="${URL.createObjectURL(selectedFile)}" alt="预览">
+            <span>${selectedFile.name}</span>
+          </div>
+        `;
+        return;
+      }
+      if (existingUrl) {
+        container.innerHTML = `
+          <div class="ops-upload-preview__item">
+            <img src="${existingUrl}" alt="已上传">
+            <span>已上传图片</span>
+          </div>
+        `;
+        return;
+      }
+      container.innerHTML = '<span class="text-secondary">未选择图片</span>';
+    }
+
+    function handleRankingScreenshotChange(e) {
+      selectedRankingScreenshot = (e.target.files || [])[0] || null;
+      renderSingleImagePreview('rankingPreview', existingRecord?.rankingScreenshot || '', selectedRankingScreenshot);
+    }
+
+    function handlePresaleScreenshotChange(e) {
+      selectedPresaleScreenshot = (e.target.files || [])[0] || null;
+      renderSingleImagePreview('presalePreview', existingRecord?.presaleScreenshot || '', selectedPresaleScreenshot);
+    }
+
+    function handleImagesChange(e) {
+      const idx = Number(e.target.dataset.idx);
+      const files = Array.from(e.target.files || []);
+      selectedRoomImages[idx] = files;
+      const previewEl = document.getElementById(`uploadPreview_${idx}`);
+      if (!files.length) {
+        previewEl.innerHTML = '<span class="text-secondary">未选择图片</span>';
+        return;
+      }
+      previewEl.innerHTML = files.map((file) => `
+        <div class="ops-upload-preview__item">
+          <img src="${URL.createObjectURL(file)}" alt="预览">
+          <span>${file.name}</span>
+        </div>
+      `).join('');
+    }
+
+    function refreshRateTips() {
+      hotel.roomTypes.forEach((_, idx) => {
+        const status = document.querySelector(`.room-status[data-idx="${idx}"]`).value;
+        const base = Number(document.querySelector(`.room-base[data-idx="${idx}"]`).value) || 0;
+        const saleEl = document.querySelector(`.room-sale[data-idx="${idx}"]`);
+        if (status === 'not_listed') {
+          saleEl.value = '0';
+          saleEl.disabled = true;
+        } else {
+          saleEl.disabled = false;
+        }
+        const sale = Number(saleEl.value) || 0;
+        const rate = Utils.calcPremiumRate(status === 'not_listed' ? 0 : sale, base);
+        const targetPremiumRate = Number(hotel.targetPremiumRate) || 0;
+        const abnormal = status !== 'not_listed' && rate > targetPremiumRate;
+        document.getElementById(`rateTip_${idx}`).innerHTML = `
+          当前溢价 ${Utils.formatPercent(rate)}，约定溢价 ${Utils.formatPercent(targetPremiumRate)}
+          ${abnormal ? '<span class="text-danger">（溢价异常）</span>' : ''}
+        `;
+      });
+    }
+
+    function fileToDataUrl(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
+
+    // 将图片文件压缩为 Data URL（最大 1024px，JPEG 质量 0.7）
+    // 解决 localStorage 5MB 配额限制：原图动辄 1-3MB → 压缩后 ~50-150KB
+    async function compressImageToDataUrl(file, maxDim = 1024, quality = 0.7) {
+      try {
+        if (!file || !file.type || !/^image\//.test(file.type)) {
+          return await fileToDataUrl(file);
+        }
+        const rawUrl = await fileToDataUrl(file);
+        const img = await new Promise((resolve, reject) => {
+          const i = new Image();
+          i.onload = () => resolve(i);
+          i.onerror = reject;
+          i.src = rawUrl;
+        });
+        let { width, height } = img;
+        if (!width || !height) return rawUrl;
+        if (width > maxDim || height > maxDim) {
+          if (width >= height) {
+            height = Math.round(height * (maxDim / width));
+            width = maxDim;
+          } else {
+            width = Math.round(width * (maxDim / height));
+            height = maxDim;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, width, height);
+        ctx.drawImage(img, 0, 0, width, height);
+        const compressed = canvas.toDataURL('image/jpeg', quality);
+        // 压缩反而比原图更大时（极小 PNG），回退原图
+        return compressed.length < rawUrl.length ? compressed : rawUrl;
+      } catch (err) {
+        console.warn('图片压缩失败，回退原图', err);
+        return await fileToDataUrl(file);
+      }
+    }
+
+    async function saveRecord() {
+      if (!isMiddleRole) return;
+      const saveBtn = document.getElementById('saveBtn');
+      if (saveBtn.classList.contains('btn--disabled')) return;
+      const date = document.getElementById('recordDate').value;
+      const channel = document.getElementById('channelSelect').value;
+      const rankingPositionRaw = document.getElementById('rankingPosition').value.trim();
+      const rankingPosition = rankingPositionRaw ? Math.max(1, Math.floor(Number(rankingPositionRaw) || 0)) : '';
+      const presalePackageTitle = document.getElementById('presalePackageTitle').value.trim().slice(0, 50);
+      if (!date) { alert('请选择巡检日期'); return; }
+      if (!channel) { alert('请选择巡检渠道'); return; }
+
+      const originalText = saveBtn.textContent;
+      saveBtn.classList.add('btn--disabled');
+      saveBtn.textContent = '保存中…';
+      try {
+        const roomInputs = await Promise.all(hotel.roomTypes.map(async (roomType, idx) => {
+          const status = document.querySelector(`.room-status[data-idx="${idx}"]`).value;
+          const basePrice = Number(document.querySelector(`.room-base[data-idx="${idx}"]`).value) || 0;
+          const salePrice = status === 'not_listed'
+            ? 0
+            : (Number(document.querySelector(`.room-sale[data-idx="${idx}"]`).value) || 0);
+          const picked = selectedRoomImages[idx] || [];
+          let imageItems = existingRoomImageItems[idx] || [];
+          if (picked.length) {
+            imageItems = await Promise.all(picked.map(async (file) => ({
+              name: file.name,
+              url: await compressImageToDataUrl(file)
+            })));
+          }
+          const imageNames = picked.length ? picked.map((file) => file.name) : (existingRoomImageNames[idx] || []);
+          return { roomTypeId: roomType.id, status, basePrice, salePrice, imageNames, imageItems };
+        }));
+
+        const rankingScreenshot = selectedRankingScreenshot
+          ? await compressImageToDataUrl(selectedRankingScreenshot)
+          : String(existingRecord?.rankingScreenshot || '');
+        const presaleScreenshot = selectedPresaleScreenshot
+          ? await compressImageToDataUrl(selectedPresaleScreenshot)
+          : String(existingRecord?.presaleScreenshot || '');
+
+        const payload = {
+          id: existingRecord?.id || '',
+          hotelId,
+          date,
+          channel,
+          inspectionAt: existingRecord
+            ? String(existingRecord.inspectionAt || new Date().toISOString())
+            : new Date().toISOString(),
+          roomInputs,
+          rankingPosition,
+          rankingScreenshot,
+          presalePackageTitle,
+          presaleScreenshot
+        };
+        // 1) 写 records：utils 已内置配额自愈（清旧图重试）；若仍失败再降级为不带图片版本
+        let savedAsTextOnly = false;
+        try {
+          Utils.upsertOpsRecord(payload);
+        } catch (err) {
+          if (!isQuotaError(err)) throw err;
+          const fallback = stripImagesFromPayload(payload);
+          Utils.upsertOpsRecord(fallback);
+          savedAsTextOnly = true;
+        }
+        // 2) 更新酒店巡检状态：同样可能因配额不够失败，单独包住，失败也不阻断（records 已成功）
+        try {
+          Utils.updateOpsPatrolAfterInspection(hotelId);
+        } catch (err) {
+          console.warn('更新酒店巡检汇总失败（已忽略，不影响 records 保存）', err);
+        }
+        if (savedAsTextOnly) {
+          alert('图片体积过大，本地存储空间紧张。本次仅保存文字信息，图片未持久化（原型限制）。');
+        }
+        window.location.href = `ops-ota-detail.html?id=${hotelId}${detailBackQuery}`;
+      } catch (err) {
+        console.error('保存巡检失败', err);
+        alert('保存失败：' + (err && err.message ? err.message : '未知错误'));
+        saveBtn.classList.remove('btn--disabled');
+        saveBtn.textContent = originalText;
+      }
+    }
+
+    function isQuotaError(err) {
+      if (!err) return false;
+      const name = err.name || '';
+      const code = err.code;
+      return name === 'QuotaExceededError'
+        || name === 'NS_ERROR_DOM_QUOTA_REACHED'
+        || code === 22 || code === 1014;
+    }
+
+    function stripImagesFromPayload(payload) {
+      return {
+        ...payload,
+        rankingScreenshot: '',
+        presaleScreenshot: '',
+        roomInputs: (payload.roomInputs || []).map((row) => ({
+          ...row,
+          imageItems: (row.imageItems || []).map((item) => ({ name: item.name, url: '' }))
+        }))
+      };
+    }
+  </script>
+</body>
+</html>

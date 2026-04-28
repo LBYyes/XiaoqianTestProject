@@ -1,0 +1,141 @@
+.stage-form {
+  background: var(--bg-card);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-lg);
+  box-shadow: var(--shadow-sm);
+  margin-bottom: var(--spacing-md);
+}
+
+.stage-form__title {
+  font-size: var(--font-lg);
+  font-weight: 700;
+  margin-bottom: var(--spacing-xl);
+}
+
+/* 评分输入 */
+.score-group { margin-bottom: var(--spacing-lg); }
+.score-group__title {
+  font-size: var(--font-sm);
+  font-weight: 600;
+  margin-bottom: var(--spacing-md);
+  padding-bottom: var(--spacing-xs);
+  border-bottom: 1px solid var(--border-light);
+}
+
+.score-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacing-sm) 0;
+}
+
+.score-row__label { font-size: var(--font-sm); color: var(--text-secondary); }
+
+.score-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.score-input {
+  width: 56px;
+  height: 36px;
+  text-align: center;
+  background: var(--bg-input);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-md);
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+
+.score-input:focus { border-color: var(--color-primary); }
+.score-max { font-size: var(--font-xs); color: var(--text-placeholder); }
+
+.score-preview {
+  margin-top: var(--spacing-lg);
+  padding: var(--spacing-lg);
+  background: var(--color-primary-bg);
+  border-radius: var(--radius-lg);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.score-preview__num {
+  font-size: 36px;
+  font-weight: 700;
+  color: var(--color-primary);
+  line-height: 1;
+}
+
+/* 参与者列表 */
+.participant-block {
+  background: var(--bg-input);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md);
+  margin-bottom: var(--spacing-sm);
+  position: relative;
+}
+
+.participant-block__remove {
+  position: absolute;
+  top: var(--spacing-sm);
+  right: var(--spacing-sm);
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.participant-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--spacing-sm);
+}
+
+/* 商务条款动态切换 */
+.terms-fields {
+  padding: var(--spacing-md);
+  background: var(--color-primary-bg);
+  border-radius: var(--radius-md);
+  margin-top: var(--spacing-md);
+}
+
+.terms-fields__title {
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--color-primary);
+  margin-bottom: var(--spacing-md);
+}
+
+.terms-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--spacing-md);
+}
+
+/* 底部 */
+.action-footer {
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: 500px;
+  padding: var(--spacing-md) var(--spacing-lg);
+  background: var(--bg-card);
+  box-shadow: 0 -2px 10px rgba(0,0,0,0.06);
+  z-index: 90;
+}
+
+/* 保存按钮浮在 TabBar 上方时使用 */
+.action-footer--above-tabbar {
+  bottom: calc(var(--tabbar-height) + var(--safe-bottom));
+  padding-bottom: var(--spacing-md);
+}

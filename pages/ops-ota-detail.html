@@ -1,0 +1,571 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>OTA巡检详情 - 奇趣XR酒店管理平台</title>
+  <link rel="stylesheet" href="../assets/css/theme.css?v=19">
+  <link rel="stylesheet" href="../assets/css/common.css?v=19">
+  <link rel="stylesheet" href="../assets/css/pages/ops.css?v=65">
+</head>
+<body>
+  <div class="app-wrapper">
+    <div id="header"></div>
+    <main class="page-content page-content--with-header" style="padding-bottom:calc(var(--tabbar-height) + var(--safe-bottom) + 72px);">
+      <div id="detailHead"></div>
+      <div class="ops-filter-row ops-filter-row--three" id="detailFiltersRow">
+        <select class="form-select form-select--sm" id="dateFilter"></select>
+        <select class="form-select form-select--sm" id="channelFilter"></select>
+        <select class="form-select form-select--sm" id="abnormalFilter">
+          <option value="all">异常筛选（all）</option>
+          <option value="listing">上架异常</option>
+          <option value="premium">溢价异常</option>
+          <option value="both">两者都</option>
+          <option value="normal">正常</option>
+        </select>
+      </div>
+      <div class="ops-dashboard-card">
+        <div class="ops-dashboard-card__head" style="margin-bottom:0;">
+          <div class="ops-dashboard-card__title">巡检记录</div>
+          <div class="ops-dashboard-card__desc">按时间倒序展示巡检数据</div>
+        </div>
+      </div>
+      <section class="ops-dashboard-card" id="recoveryDetail" style="display:none;"></section>
+      <div id="records"></div>
+    </main>
+    <div class="action-footer action-footer--above-tabbar" id="footerAction"></div>
+    <div class="ops-image-modal" id="imageModal" style="display:none;">
+      <div class="ops-image-modal__mask" id="imageModalMask"></div>
+      <button type="button" class="ops-image-modal__close" id="imageModalClose" aria-label="关闭">×</button>
+      <div class="ops-image-modal__content">
+        <img id="imageModalImg" alt="预览大图">
+      </div>
+      <div class="ops-image-modal__hint">点击空白处关闭</div>
+    </div>
+    <div class="ops-recovery-modal" id="recoveryModal" style="display:none;">
+      <div class="ops-recovery-modal__mask" id="recoveryModalMask"></div>
+      <div class="ops-recovery-modal__panel">
+        <div class="ops-recovery-modal__title">申请恢复</div>
+        <textarea class="form-input ops-recovery-modal__textarea" id="recoveryContentInput" placeholder="请填写与酒店沟通情况、异常处理结果"></textarea>
+        <div class="ops-recovery-modal__hint">截图（最多 5 张）</div>
+        <input type="file" id="recoveryImageInput" accept="image/*" multiple>
+        <div class="ops-recovery-modal__preview" id="recoveryImagePreview"></div>
+        <div class="ops-recovery-modal__actions">
+          <button type="button" class="btn btn--outline btn--block" id="recoveryCancelBtn">取消</button>
+          <button type="button" class="btn btn--primary btn--block" id="recoverySubmitBtn">提交申请</button>
+        </div>
+      </div>
+    </div>
+    <button type="button" class="ops-role-float" id="roleFloatBtn">切换角色</button>
+  </div>
+
+  <script src="../assets/js/mock/operations.js?v=65"></script>
+  <script src="../assets/js/utils.js?v=65"></script>
+  <script src="../assets/js/components/header.js?v=19"></script>
+  <script>
+    const hotelId = Number(Utils.getUrlParam('id'));
+    const role = (Utils.getUrlParam('role') || 'ops').trim();
+    const isMiddleRole = role === 'middle';
+    const currentOps = (Utils.getUrlParam('ops') || (isMiddleRole ? 'all' : '王莉')).trim();
+    const abnormalParam = (Utils.getUrlParam('abnormal') || '').trim();
+    const opsOwnerParam = (Utils.getUrlParam('opsOwner') || '').trim();
+    const provinceParam = (Utils.getUrlParam('province') || '').trim();
+    const keywordParam = (Utils.getUrlParam('keyword') || '').trim();
+    const sortParam = (Utils.getUrlParam('sort') || '').trim();
+    const viewParam = (Utils.getUrlParam('view') || 'card').trim();
+    const dateFilterParam = (Utils.getUrlParam('dateFilter') || '').trim();
+    const channelFilterParam = (Utils.getUrlParam('channelFilter') || '').trim();
+    const hotel = Utils.getOpsHotelById(hotelId);
+    let dateFilter = dateFilterParam || 'all';
+    let channelFilter = channelFilterParam || 'all';
+    let abnormalFilter = ['all', 'listing', 'premium', 'both', 'normal'].includes(abnormalParam) ? abnormalParam : 'all';
+    let recoveryImages = [];
+
+    Header.render('#header', {
+      title: 'OTA巡检详情',
+      showBack: true,
+      backHref: `ops-ota-list.html?role=${encodeURIComponent(role)}&ops=${encodeURIComponent(currentOps)}&abnormal=${encodeURIComponent(abnormalParam || 'all')}&opsOwner=${encodeURIComponent(opsOwnerParam)}&province=${encodeURIComponent(provinceParam)}&keyword=${encodeURIComponent(keywordParam)}&sort=${encodeURIComponent(sortParam)}&view=${encodeURIComponent(viewParam)}`
+    });
+
+    if (!hotel) {
+      document.getElementById('detailHead').innerHTML = '<div class="empty-state"><div class="empty-state__icon">🏨</div><div class="empty-state__text">酒店不存在</div></div>';
+      document.getElementById('footerAction').style.display = 'none';
+    } else if (!isMiddleRole && hotel.ownerOps !== currentOps) {
+      document.getElementById('detailHead').innerHTML = '<div class="empty-state"><div class="empty-state__icon">🔒</div><div class="empty-state__text">仅可查看本人负责酒店</div></div>';
+      document.getElementById('footerAction').style.display = 'none';
+    } else {
+      renderHead();
+      renderFooter();
+      initFilters();
+      renderRecoveryDetail();
+      renderRecords();
+      initRoleFloat();
+    }
+
+    function statusLabel(status) {
+      if (status === 'on_sale') return '在售';
+      if (status === 'sold_out') return '满房';
+      if (status === 'unavailable') return '不可售';
+      return '未上架';
+    }
+
+    function rankingStatusMeta(position) {
+      const num = Number(position);
+      if (!Number.isFinite(num) || num <= 0) {
+        return { label: '未填写', className: 'text-secondary' };
+      }
+      if (num <= 5) {
+        return { label: '正常', className: 'text-success' };
+      }
+      return { label: '异常', className: 'text-danger' };
+    }
+
+    function buildRecordImage(name, url) {
+      if (!url) return '';
+      return `
+        <button type="button" class="ops-upload-preview__item ops-upload-preview__item--button" data-preview-src="${url}">
+          <img src="${url}" alt="${name}">
+          <span>${name}</span>
+        </button>
+      `;
+    }
+
+    function getRecordResultType(record) {
+      return Utils.calcOpsPatrolResultType(hotel, record);
+    }
+
+    function matchesAbnormal(type) {
+      if (abnormalFilter === 'all') return true;
+      return abnormalFilter === type;
+    }
+
+    function getRoleSwitchHref(targetRole) {
+      const params = new URLSearchParams({
+        id: String(hotelId),
+        role: targetRole,
+        ops: targetRole === 'middle' ? 'all' : (currentOps === 'all' ? '王莉' : currentOps),
+        abnormal: abnormalParam || 'all',
+        opsOwner: opsOwnerParam,
+        province: provinceParam,
+        keyword: keywordParam,
+        sort: sortParam,
+        view: viewParam
+      });
+      return `ops-ota-detail.html?${params.toString()}`;
+    }
+
+    function getSelectedChannelSummary() {
+      const all = Utils.getOpsPatrolSummaryByChannel(hotel);
+      if (!all.length) return null;
+      if (channelFilter !== 'all') return all.find((x) => x.channel === channelFilter) || null;
+      return all.slice().sort((a, b) => (b.lastInspectionAt || '').localeCompare(a.lastInspectionAt || ''))[0] || null;
+    }
+
+    function renderRecoveryDetail() {
+      const wrap = document.getElementById('recoveryDetail');
+      const entries = Utils.getOpsPatrolSummaryByChannel(hotel)
+        .filter((x) => x.hasRecoveryApply)
+        .slice()
+        .sort((a, b) => (b.recoveryApply.submittedAt || '').localeCompare(a.recoveryApply.submittedAt || ''));
+      if (!entries.length) {
+        wrap.style.display = 'none';
+        wrap.innerHTML = '';
+        return;
+      }
+      const item = channelFilter === 'all'
+        ? entries[0]
+        : entries.find((x) => x.channel === channelFilter);
+      if (!item) {
+        wrap.style.display = 'none';
+        wrap.innerHTML = '';
+        return;
+      }
+      const apply = item.recoveryApply || {};
+      const images = Array.isArray(apply.images) ? apply.images : [];
+      wrap.style.display = 'block';
+      wrap.innerHTML = `
+        <div class="ops-dashboard-card__head">
+          <div class="ops-dashboard-card__title">运营申请恢复</div>
+          <div class="ops-dashboard-card__desc">${Utils.channelLabel(item.channel)} · ${Utils.formatDateTime(apply.submittedAt)}</div>
+        </div>
+        <div class="ops-record-room__meta">${apply.content || '-'}</div>
+        ${images.length ? `<div class="ops-upload-preview">${images.map((img) => buildRecordImage(img.name || '截图', img.url)).join('')}</div>` : ''}
+      `;
+    }
+
+    function renderHead() {
+      const summary = Utils.getOpsPatrolSummary(hotel);
+      const statusMeta = Utils.getOpsPatrolStatusMeta(summary.processingStatus);
+      const resultMeta = Utils.getOpsPatrolResultMeta(summary.lastResultType);
+      const durationText = summary.isAbnormal ? `${summary.abnormalDurationHours}小时` : '-';
+      if (!isMiddleRole) {
+        document.getElementById('detailHead').innerHTML = `
+          <div class="ops-detail-head">
+            <div class="ops-detail-head__title">${hotel.name}</div>
+            <div class="ops-hotel-item__meta">${hotel.province} · 运营：${hotel.ownerOps || '-'} · 销售：${hotel.ownerSales || '-'}</div>
+            <div class="ops-hotel-item__meta">上线渠道：${hotel.channels.map(Utils.channelLabel).join(' / ') || '-'}</div>
+            <div class="ops-hotel-item__meta">最新巡检：${summary.lastInspectionAt ? Utils.formatDateTime(summary.lastInspectionAt) : '-'} ${summary.lastChannel ? `· ${Utils.channelLabel(summary.lastChannel)}` : ''}</div>
+            <div class="ops-hotel-item__meta">状态：${resultMeta.label} · 异常时间：${durationText}</div>
+            <div class="ops-hotel-item__tags" style="margin-top:var(--spacing-sm);">
+              <span class="tag tag--${statusMeta.tag}">${statusMeta.label}</span>
+              <span class="tag tag--${resultMeta.tag}">${resultMeta.label}</span>
+            </div>
+          </div>
+        `;
+        return;
+      }
+      const roomTypeText = (hotel.roomTypes || [])
+        .map((room) => `${room.name}${Number(room.cooperationRooms) > 0 ? `（${Number(room.cooperationRooms)}间）` : ''}`)
+        .join('；') || '-';
+      const businessMode = Utils.getBusinessModeLabel(hotel.businessTerms?.mode);
+      document.getElementById('detailHead').innerHTML = `
+        <div class="ops-detail-head">
+          <div class="ops-detail-head__title">${hotel.name}</div>
+          <div class="ops-hotel-item__meta">${hotel.province} · 运营：${hotel.ownerOps || '-'} · 销售：${hotel.ownerSales || '-'}</div>
+          <div class="ops-hotel-item__meta">上线渠道：${hotel.channels.map(Utils.channelLabel).join(' / ') || '-'}</div>
+          <div class="ops-hotel-item__meta">最新巡检：${summary.lastInspectionAt ? Utils.formatDateTime(summary.lastInspectionAt) : '-'} ${summary.lastChannel ? `· ${Utils.channelLabel(summary.lastChannel)}` : ''}</div>
+          <div class="ops-hotel-item__meta">状态：${resultMeta.label} · 异常时间：${durationText}</div>
+          <div class="ops-hotel-item__tags" style="margin-top:var(--spacing-sm);">
+            <span class="tag tag--${statusMeta.tag}">${statusMeta.label}</span>
+            <span class="tag tag--${resultMeta.tag}">${resultMeta.label}</span>
+          </div>
+          <button type="button" class="btn btn--outline btn--sm" id="toggleHotelInfoBtn" style="margin-top:var(--spacing-sm);">展开酒店信息</button>
+          <div class="ops-detail-more" id="hotelMoreInfo" style="display:none;">
+            <div class="ops-hotel-item__meta">城市：${hotel.city || '-'}</div>
+            <div class="ops-hotel-item__meta">主题：${hotel.themeName || '-'}</div>
+            <div class="ops-hotel-item__meta">上线时间：${hotel.launchDate ? Utils.formatDate(hotel.launchDate) : '-'}</div>
+            <div class="ops-hotel-item__meta">目标溢价：${Utils.formatPercent(hotel.targetPremiumRate || 0)}</div>
+            <div class="ops-hotel-item__meta">房型与合作间数：${roomTypeText}</div>
+            <div class="ops-hotel-item__meta">合作模式：${businessMode}</div>
+          </div>
+        </div>
+      `;
+      const toggleBtn = document.getElementById('toggleHotelInfoBtn');
+      const moreEl = document.getElementById('hotelMoreInfo');
+      if (toggleBtn && moreEl) {
+        toggleBtn.addEventListener('click', () => {
+          const expanded = moreEl.style.display !== 'none';
+          moreEl.style.display = expanded ? 'none' : 'block';
+          toggleBtn.textContent = expanded ? '展开酒店信息' : '收起酒店信息';
+        });
+      }
+    }
+
+    function renderFooter() {
+      const summary = Utils.getOpsPatrolSummary(hotel);
+      const footerEl = document.getElementById('footerAction');
+      if (isMiddleRole) {
+        const isPendingAcceptance = summary.processingStatus === 'pending_review';
+        footerEl.innerHTML = `
+          <a class="btn btn--primary btn--block btn--lg" href="ops-ota-entry.html?id=${hotel.id}&role=${encodeURIComponent(role)}&ops=${encodeURIComponent(currentOps)}&abnormal=${encodeURIComponent(abnormalParam || 'all')}&opsOwner=${encodeURIComponent(opsOwnerParam)}&province=${encodeURIComponent(provinceParam)}&keyword=${encodeURIComponent(keywordParam)}&sort=${encodeURIComponent(sortParam)}&view=${encodeURIComponent(viewParam)}">${isPendingAcceptance ? '去验收（新增巡检）' : '新增巡检'}</a>
+        `;
+        return;
+      }
+      const selected = getSelectedChannelSummary();
+      if (!selected || !selected.lastInspectionAt) {
+        footerEl.innerHTML = '<button class="btn btn--outline btn--block btn--lg" disabled>当前渠道暂无可处理记录</button>';
+        return;
+      }
+      if (selected.processingStatus !== 'processing') {
+        const submittedAt = Utils.formatDateTime(selected.recoveryApply?.submittedAt || selected.pendingApplyAt);
+        const text = selected.processingStatus === 'pending_review'
+          ? `已申请恢复${submittedAt !== '-' ? ` · ${submittedAt}` : ''}`
+          : '当前渠道无需申请恢复';
+        footerEl.innerHTML = `<button class="btn btn--outline btn--block btn--lg" disabled>${text}</button>`;
+        return;
+      }
+      footerEl.innerHTML = `
+        <button type="button" class="btn btn--primary btn--block btn--lg" id="applyBtn">申请恢复</button>
+      `;
+      const applyBtn = document.getElementById('applyBtn');
+      if (applyBtn) {
+        applyBtn.addEventListener('click', () => {
+          document.getElementById('recoveryContentInput').value = '';
+          document.getElementById('recoveryImageInput').value = '';
+          recoveryImages = [];
+          renderRecoveryPreview();
+          document.getElementById('recoveryModal').dataset.channel = selected.channel;
+          document.getElementById('recoveryModal').style.display = 'flex';
+        });
+      }
+    }
+
+    function renderRecoveryPreview() {
+      const wrap = document.getElementById('recoveryImagePreview');
+      wrap.innerHTML = recoveryImages.map((img, idx) => `
+        <div class="ops-recovery-modal__preview-item">
+          <img src="${img.url}" alt="${img.name}">
+          <button type="button" data-remove-recovery-image="${idx}">移除</button>
+        </div>
+      `).join('');
+    }
+
+    function closeRecoveryModal() {
+      document.getElementById('recoveryModal').style.display = 'none';
+      recoveryImages = [];
+    }
+
+    function initRoleFloat() {
+      const btn = document.getElementById('roleFloatBtn');
+      if (!btn || (role !== 'middle' && role !== 'ops')) return;
+      const targetRole = role === 'middle' ? 'ops' : 'middle';
+      btn.textContent = role === 'middle' ? '切运营' : '切中台';
+      btn.addEventListener('click', () => {
+        window.location.href = getRoleSwitchHref(targetRole);
+      });
+      let drag = false;
+      let moved = false;
+      let offsetX = 0;
+      let offsetY = 0;
+      const setPos = (x, y) => {
+        const min = 8;
+        const w = btn.offsetWidth || 56;
+        const h = btn.offsetHeight || 56;
+        const maxX = Math.max(window.innerWidth - w - min, min);
+        const maxY = Math.max(window.innerHeight - h - min, min);
+        btn.style.left = `${Math.min(Math.max(x, min), maxX)}px`;
+        btn.style.top = `${Math.min(Math.max(y, min), maxY)}px`;
+      };
+      setPos(window.innerWidth - 72, window.innerHeight - 132);
+      btn.addEventListener('pointerdown', (e) => {
+        drag = true;
+        moved = false;
+        const rect = btn.getBoundingClientRect();
+        offsetX = e.clientX - rect.left;
+        offsetY = e.clientY - rect.top;
+        btn.setPointerCapture(e.pointerId);
+      });
+      btn.addEventListener('pointermove', (e) => {
+        if (!drag) return;
+        moved = true;
+        setPos(e.clientX - offsetX, e.clientY - offsetY);
+      });
+      btn.addEventListener('pointerup', () => {
+        drag = false;
+        if (moved) return;
+      });
+      window.addEventListener('resize', () => {
+        const rect = btn.getBoundingClientRect();
+        setPos(rect.left, rect.top);
+      });
+    }
+
+    function initFilters() {
+      const dates = [...new Set(Utils.getOpsRecords().filter((r) => Number(r.hotelId) === hotel.id).map((r) => r.date))].sort((a, b) => b.localeCompare(a));
+      document.getElementById('dateFilter').innerHTML = `
+        <option value="all">日期（all）</option>
+        ${dates.map((date) => `<option value="${date}">${Utils.formatDate(date)}</option>`).join('')}
+      `;
+      if (dateFilter !== 'all' && !dates.includes(dateFilter)) dateFilter = 'all';
+      document.getElementById('dateFilter').value = dateFilter;
+      const channels = [...new Set([...(hotel.channels || []), ...Utils.getOpsRecords().filter((r) => Number(r.hotelId) === hotel.id).map((r) => r.channel)])];
+      document.getElementById('channelFilter').innerHTML = `
+        <option value="all">全部渠道</option>
+        ${channels.map((channel) => `<option value="${channel}">${Utils.channelLabel(channel)}</option>`).join('')}
+      `;
+      if (channelFilter !== 'all' && !channels.includes(channelFilter)) channelFilter = 'all';
+      document.getElementById('channelFilter').value = channelFilter;
+      document.getElementById('abnormalFilter').value = abnormalFilter;
+      if (!isMiddleRole) {
+        document.getElementById('dateFilter').style.display = 'none';
+        document.getElementById('detailFiltersRow').classList.remove('ops-filter-row--three');
+      } else {
+        document.getElementById('dateFilter').style.display = '';
+        document.getElementById('detailFiltersRow').classList.add('ops-filter-row--three');
+      }
+    }
+
+    function buildRoomImages(room) {
+      const list = [];
+      if (Array.isArray(room.imageItems) && room.imageItems.length) {
+        room.imageItems.forEach((item) => {
+          if (item && item.url) list.push({ name: item.name || '图片', url: item.url });
+        });
+      } else if (Array.isArray(room.imageNames) && room.imageNames.length) {
+        room.imageNames.forEach((name) => {
+          const safe = String(name || '图片');
+          const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='240' height='160'><rect width='100%' height='100%' fill='#eef2ff'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-size='14' fill='#64748b'>${safe.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</text></svg>`;
+          list.push({ name: safe, url: `data:image/svg+xml;utf8,${encodeURIComponent(svg)}` });
+        });
+      }
+      return list;
+    }
+
+    function renderRoomImages(room) {
+      const images = buildRoomImages(room);
+      if (!images.length) return '';
+      return `
+        <div class="ops-upload-preview">
+          ${images.map((img) => `
+            <button type="button" class="ops-upload-preview__item ops-upload-preview__item--button" data-preview-src="${img.url}">
+              <img src="${img.url}" alt="${img.name}">
+              <span>${img.name}</span>
+            </button>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    function renderRecords() {
+      const roomTypeMap = {};
+      hotel.roomTypes.forEach((roomType) => { roomTypeMap[roomType.id] = roomType; });
+      const targetPremiumRate = Number(hotel.targetPremiumRate) || 0;
+      let records = Utils.getOpsRecords()
+        .filter((item) => Number(item.hotelId) === hotel.id);
+
+      if (dateFilter !== 'all') records = records.filter((item) => item.date === dateFilter);
+      if (channelFilter !== 'all') records = records.filter((item) => item.channel === channelFilter);
+      if (abnormalFilter !== 'all') {
+        records = records.filter((item) => matchesAbnormal(getRecordResultType(item)));
+      }
+      records = records.sort((a, b) => {
+        const aTime = String(a.inspectionAt || `${a.date}T00:00:00`);
+        const bTime = String(b.inspectionAt || `${b.date}T00:00:00`);
+        if (bTime !== aTime) return bTime.localeCompare(aTime);
+        return String(b.id || '').localeCompare(String(a.id || ''));
+      });
+
+      if (!records.length) {
+        document.getElementById('records').innerHTML = '<div class="empty-state"><div class="empty-state__icon">📝</div><div class="empty-state__text">暂无符合筛选条件数据</div></div>';
+        return;
+      }
+
+      document.getElementById('records').innerHTML = records.map((record) => {
+        const resultMeta = Utils.getOpsPatrolResultMeta(getRecordResultType(record));
+        const canEdit = isMiddleRole;
+        const rankingMeta = rankingStatusMeta(record.rankingPosition);
+        const rankingPositionText = rankingMeta.label === '未填写' ? '未填写' : `第 ${record.rankingPosition} 名`;
+        const presaleTitle = (record.presalePackageTitle || '').trim() || '未填写';
+        return `
+          <${canEdit ? 'a' : 'div'} class="ops-record-card" ${canEdit ? `href="ops-ota-entry.html?id=${hotel.id}&role=${encodeURIComponent(role)}&ops=${encodeURIComponent(currentOps)}&recordId=${encodeURIComponent(record.id || '')}&date=${encodeURIComponent(record.date)}&channel=${encodeURIComponent(record.channel)}&abnormal=${encodeURIComponent(abnormalParam || 'all')}&opsOwner=${encodeURIComponent(opsOwnerParam)}&province=${encodeURIComponent(provinceParam)}&keyword=${encodeURIComponent(keywordParam)}&sort=${encodeURIComponent(sortParam)}&view=${encodeURIComponent(viewParam)}"` : ''}>
+            <div class="ops-record-card__head">
+              <div style="font-weight:700;">${Utils.formatDateTime(record.inspectionAt || `${record.date}T00:00:00`)}</div>
+              <div style="display:flex;align-items:center;gap:6px;">
+                <span class="tag tag--primary">${Utils.channelLabel(record.channel)}</span>
+                <span class="tag tag--${resultMeta.tag}">${resultMeta.label}</span>
+                ${canEdit ? '<span style="color:var(--text-placeholder);">›</span>' : ''}
+              </div>
+            </div>
+            <div class="ops-record-room" style="margin-top:0;padding-top:0;border-top:none;">
+              <div class="ops-record-room__name">排名异常</div>
+              <div class="ops-record-room__meta">排名：${rankingPositionText}</div>
+              <div class="ops-record-room__meta">判定：<span class="${rankingMeta.className}">${rankingMeta.label}</span>（1-5正常，>5异常）</div>
+              ${record.rankingScreenshot ? `<div class="ops-upload-preview">${buildRecordImage('排名截图', record.rankingScreenshot)}</div>` : '<div class="ops-record-room__meta">截图：未上传</div>'}
+            </div>
+            <div class="ops-record-room">
+              <div class="ops-record-room__name">预售套餐</div>
+              <div class="ops-record-room__meta">套餐标题：${presaleTitle}</div>
+              ${record.presaleScreenshot ? `<div class="ops-upload-preview">${buildRecordImage('预售套餐截图', record.presaleScreenshot)}</div>` : '<div class="ops-record-room__meta">截图：未上传</div>'}
+            </div>
+            ${(record.roomInputs || []).map((room) => {
+              const roomType = roomTypeMap[room.roomTypeId] || { name: room.roomTypeId };
+              const rate = Utils.calcPremiumRate(room.salePrice, room.basePrice);
+              const premiumAbnormal = room.status !== 'not_listed' && rate > targetPremiumRate;
+              const listingAbnormal = room.status === 'not_listed' || room.status === 'unavailable';
+              return `
+                <div class="ops-record-room">
+                  <div class="ops-record-room__name">${roomType.name}</div>
+                  <div class="ops-record-room__meta">状态：${statusLabel(room.status)}</div>
+                  <div class="ops-record-room__meta">基础价：${room.basePrice || 0} 元 · 销售价：${room.salePrice || 0} 元</div>
+                  <div class="ops-record-room__meta">
+                    溢价：${Utils.formatPercent(rate)}（约定 ${Utils.formatPercent(targetPremiumRate)}）
+                    ${premiumAbnormal ? '<span class="text-danger"> · 溢价异常</span>' : ''}
+                    ${listingAbnormal ? '<span class="text-danger"> · 上架异常</span>' : ''}
+                  </div>
+                  ${renderRoomImages(room)}
+                </div>
+              `;
+            }).join('')}
+          </${canEdit ? 'a' : 'div'}>
+        `;
+      }).join('');
+    }
+
+    function openImagePreview(src) {
+      if (!src) return;
+      document.getElementById('imageModalImg').src = src;
+      document.getElementById('imageModal').style.display = 'flex';
+      document.body.style.overflow = 'hidden';
+    }
+
+    function closeImagePreview() {
+      document.getElementById('imageModal').style.display = 'none';
+      document.getElementById('imageModalImg').src = '';
+      document.body.style.overflow = '';
+    }
+
+    document.getElementById('dateFilter').addEventListener('change', (e) => {
+      dateFilter = e.target.value;
+      renderRecords();
+    });
+    document.getElementById('channelFilter').addEventListener('change', (e) => {
+      channelFilter = e.target.value;
+      renderFooter();
+      renderRecoveryDetail();
+      renderRecords();
+    });
+    document.getElementById('abnormalFilter').addEventListener('change', (e) => {
+      abnormalFilter = e.target.value;
+      renderRecords();
+    });
+    document.getElementById('recoveryCancelBtn').addEventListener('click', closeRecoveryModal);
+    document.getElementById('recoveryModalMask').addEventListener('click', closeRecoveryModal);
+    document.getElementById('recoveryImageInput').addEventListener('change', (e) => {
+      const files = [...(e.target.files || [])];
+      const remain = 5 - recoveryImages.length;
+      files.slice(0, Math.max(remain, 0)).forEach((file) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          recoveryImages.push({ name: file.name || '截图', url: String(reader.result || '') });
+          recoveryImages = recoveryImages.slice(0, 5);
+          renderRecoveryPreview();
+        };
+        reader.readAsDataURL(file);
+      });
+      e.target.value = '';
+    });
+    document.getElementById('recoveryImagePreview').addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-remove-recovery-image]');
+      if (!btn) return;
+      const idx = Number(btn.dataset.removeRecoveryImage);
+      if (!Number.isFinite(idx)) return;
+      recoveryImages = recoveryImages.filter((_, i) => i !== idx);
+      renderRecoveryPreview();
+    });
+    document.getElementById('recoverySubmitBtn').addEventListener('click', () => {
+      const channel = document.getElementById('recoveryModal').dataset.channel || '';
+      const content = String(document.getElementById('recoveryContentInput').value || '').trim();
+      if (!channel) return;
+      if (!content) {
+        window.alert('请先填写沟通情况与处理结果');
+        return;
+      }
+      Utils.submitOpsRecoveryApply({
+        hotelId: hotel.id,
+        channel,
+        content,
+        images: recoveryImages,
+        submittedBy: role
+      });
+      closeRecoveryModal();
+      renderHead();
+      renderFooter();
+      renderRecoveryDetail();
+    });
+    document.addEventListener('click', (e) => {
+      const previewBtn = e.target.closest('[data-preview-src]');
+      if (!previewBtn) return;
+      e.preventDefault();
+      e.stopPropagation();
+      openImagePreview(previewBtn.dataset.previewSrc);
+    });
+    document.getElementById('imageModalMask').addEventListener('click', closeImagePreview);
+    document.getElementById('imageModalClose').addEventListener('click', closeImagePreview);
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && document.getElementById('imageModal').style.display === 'flex') {
+        closeImagePreview();
+      }
+    });
+  </script>
+</body>
+</html>

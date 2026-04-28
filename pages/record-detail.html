@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>记录详情 - 奇趣庄园</title>
+  <link rel="stylesheet" href="../assets/css/theme.css?v=5">
+  <link rel="stylesheet" href="../assets/css/common.css?v=5">
+  <link rel="stylesheet" href="../assets/css/pages/hotel-detail.css?v=5">
+  <style>
+    .record-detail { padding: var(--spacing-lg); }
+
+    .record-hero {
+      background: var(--bg-card);
+      border-radius: var(--radius-lg);
+      padding: var(--spacing-lg);
+      margin-bottom: var(--spacing-md);
+    }
+    .record-hero__label {
+      font-size: var(--font-xs);
+      color: var(--text-muted);
+      margin-bottom: 2px;
+    }
+    .record-hero__title {
+      font-size: var(--font-lg);
+      font-weight: 700;
+      margin-bottom: var(--spacing-xs);
+    }
+    .record-hero__date {
+      font-size: var(--font-sm);
+      color: var(--text-secondary);
+    }
+
+    .detail-section {
+      background: var(--bg-card);
+      border-radius: var(--radius-lg);
+      padding: var(--spacing-lg);
+      margin-bottom: var(--spacing-md);
+    }
+    .detail-section__title {
+      font-size: var(--font-xs);
+      color: var(--text-muted);
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      margin-bottom: var(--spacing-md);
+      padding-bottom: var(--spacing-sm);
+      border-bottom: 1px solid var(--border-light);
+    }
+    .detail-row {
+      display: flex;
+      align-items: flex-start;
+      margin-bottom: var(--spacing-sm);
+      font-size: var(--font-sm);
+    }
+    .detail-row:last-child { margin-bottom: 0; }
+    .detail-row__key {
+      color: var(--text-secondary);
+      min-width: 80px;
+      flex-shrink: 0;
+    }
+    .detail-row__val {
+      color: var(--text-primary);
+      flex: 1;
+      line-height: 1.6;
+    }
+
+    .terms-badge {
+      display: inline-block;
+      background: var(--color-primary-bg);
+      color: var(--color-primary);
+      font-size: var(--font-xs);
+      font-weight: 600;
+      padding: 3px 10px;
+      border-radius: 100px;
+      margin-bottom: var(--spacing-md);
+    }
+
+    .delete-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      width: 44px;
+      height: 44px;
+      cursor: pointer;
+      color: var(--color-danger, #e64d4d);
+      opacity: 0.85;
+    }
+    .delete-btn:active { opacity: 1; }
+
+    .link-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      color: var(--color-primary);
+      font-size: var(--font-sm);
+      text-decoration: none;
+    }
+
+    .confirm-modal { position: fixed; inset: 0; z-index: 200; display: none; align-items: flex-end; }
+    .confirm-modal.is-open { display: flex; }
+    .confirm-modal__overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.5); }
+    .confirm-modal__box {
+      position: relative; z-index: 1;
+      width: 100%; max-width: 500px; margin: 0 auto;
+      background: var(--bg-card);
+      border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+      padding: var(--spacing-xl) var(--spacing-lg) calc(var(--spacing-xl) + var(--safe-bottom));
+    }
+    .confirm-modal__title { font-size: var(--font-md); font-weight: 700; margin-bottom: var(--spacing-sm); }
+    .confirm-modal__desc { font-size: var(--font-sm); color: var(--text-secondary); margin-bottom: var(--spacing-xl); }
+    .confirm-modal__actions { display: flex; gap: var(--spacing-md); }
+    .confirm-modal__actions .btn { flex: 1; }
+  </style>
+</head>
+<body>
+  <div class="app-wrapper">
+    <div id="header"></div>
+    <main class="page-content page-content--with-header" style="padding-bottom:calc(var(--tabbar-height) + var(--safe-bottom) + 16px);">
+      <div class="record-detail" id="recordContent"></div>
+    </main>
+    <div id="tabbar"></div>
+  </div>
+
+  <!-- 删除确认弹层 -->
+  <div class="confirm-modal" id="confirmModal">
+    <div class="confirm-modal__overlay" onclick="closeConfirm()"></div>
+    <div class="confirm-modal__box">
+      <div class="confirm-modal__title">删除记录</div>
+      <div class="confirm-modal__desc">确认删除该条记录？此操作无法撤销。</div>
+      <div class="confirm-modal__actions">
+        <div class="btn btn--ghost" onclick="closeConfirm()">取消</div>
+        <div class="btn btn--danger" onclick="doDelete()">确认删除</div>
+      </div>
+    </div>
+  </div>
+
+  <script src="../assets/js/mock/hotels.js?v=5"></script>
+  <script src="../assets/js/utils.js?v=4"></script>
+  <script src="../assets/js/components/header.js?v=4"></script>
+  <script src="../assets/js/components/tabbar.js?v=4"></script>
+  <script>
+    const DELETE_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="20" height="20"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>`;
+
+    const hotelId = Utils.getUrlParam('id');
+    const stage   = Utils.getUrlParam('stage');
+    const idx     = parseInt(Utils.getUrlParam('idx') || '0', 10);
+
+    const backUrl = `stage-detail.html?id=${hotelId}&stage=${stage}`;
+
+    Header.render('#header', {
+      title: stage === 'pitch' ? '讲解记录详情' : '谈判记录详情',
+      showBack: true,
+      backHref: backUrl,
+      actions: `<div class="delete-btn" onclick="openConfirm()">${DELETE_ICON}</div>`
+    });
+    TabBar.render('#tabbar', { active: 'list' });
+
+    const hotel = Utils.getHotelById(hotelId);
+    const content = document.getElementById('recordContent');
+
+    if (!hotel) {
+      content.innerHTML = '<div class="empty-state mt-xl"><div class="empty-state__icon">🏨</div><div class="empty-state__text">数据不存在</div></div>';
+    } else if (stage === 'pitch') {
+      renderPitchDetail();
+    } else if (stage === 'negotiate') {
+      renderNegotiateDetail();
+    }
+
+    function renderPitchDetail() {
+      const sessions = hotel.stageData?.pitch?.sessions || [];
+      const s = sessions[idx];
+      if (!s) { content.innerHTML = '<div class="empty-state mt-xl"><div class="empty-state__text">记录不存在</div></div>'; return; }
+
+      const participants = (s.hotelParticipants || []).map(p => `${p.name}（${p.position}）`).join('、') || '-';
+
+      content.innerHTML = `
+        <div class="record-hero">
+          <div class="record-hero__label">产品讲解</div>
+          <div class="record-hero__title">第${idx + 1}次 · ${s.type || '-'}</div>
+          <div class="record-hero__date">${Utils.formatDate(s.date)}</div>
+        </div>
+
+        <div class="detail-section">
+          <div class="detail-section__title">参与人员</div>
+          <div class="detail-row">
+            <span class="detail-row__key">酒店参与者</span>
+            <span class="detail-row__val">${participants}</span>
+          </div>
+        </div>
+
+        ${s.minutes ? `
+        <div class="detail-section">
+          <div class="detail-section__title">会议纪要</div>
+          <div style="font-size:var(--font-sm);line-height:1.8;color:var(--text-primary);">${s.minutes}</div>
+          ${s.minutesLink ? `<div style="margin-top:12px;"><a href="${s.minutesLink}" target="_blank" class="link-btn">📎 查看 AI 纪要</a></div>` : ''}
+        </div>` : ''}
+      `;
+    }
+
+    function renderNegotiateDetail() {
+      const rounds = hotel.stageData?.negotiate?.rounds || [];
+      const r = rounds[idx];
+      if (!r) { content.innerHTML = '<div class="empty-state mt-xl"><div class="empty-state__text">记录不存在</div></div>'; return; }
+
+      const t = r.terms || {};
+      let termsHtml = '';
+      if (t.mode) {
+        const fields = [];
+        if (t.mode === '旺季保底') {
+          if (t.peakGuarantee) fields.push(['旺季保底额度', t.peakGuarantee]);
+        } else if (t.mode === '全年保底') {
+          if (t.yearGuarantee) fields.push(['全年保底额度', t.yearGuarantee]);
+        } else if (t.mode === '买断') {
+          if (t.buyout) fields.push(['买断额度', t.buyout]);
+        }
+        if (t.rooms)     fields.push(['合作间数', `${t.rooms} 间`]);
+        if (t.period)    fields.push(['合作期限', t.period]);
+        if (t.peakShare) fields.push(['旺季抽成', t.peakShare]);
+        if (t.offShare)  fields.push(['淡季抽成', t.offShare]);
+
+        termsHtml = `
+          <div class="detail-section">
+            <div class="detail-section__title">商务条款</div>
+            <div class="terms-badge">${t.mode}</div>
+            ${fields.map(([k, v]) => `
+              <div class="detail-row">
+                <span class="detail-row__key">${k}</span>
+                <span class="detail-row__val">${v}</span>
+              </div>`).join('')}
+          </div>`;
+      }
+
+      content.innerHTML = `
+        <div class="record-hero">
+          <div class="record-hero__label">合作模式谈判</div>
+          <div class="record-hero__title">第${idx + 1}轮谈判</div>
+          <div class="record-hero__date">${Utils.formatDate(r.date)}</div>
+        </div>
+
+        <div class="detail-section">
+          <div class="detail-section__title">参与人员</div>
+          <div class="detail-row">
+            <span class="detail-row__key">酒店方</span>
+            <span class="detail-row__val">${r.hotelParticipants || '-'}</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-row__key">我方</span>
+            <span class="detail-row__val">${r.ourParticipants || '-'}</span>
+          </div>
+        </div>
+
+        ${termsHtml}
+
+        ${r.description ? `
+        <div class="detail-section">
+          <div class="detail-section__title">谈判描述</div>
+          <div style="font-size:var(--font-sm);line-height:1.8;color:var(--text-primary);">${r.description}</div>
+          ${r.minutesLink ? `<div style="margin-top:12px;"><a href="${r.minutesLink}" target="_blank" class="link-btn">📎 查看 AI 纪要</a></div>` : ''}
+        </div>` : ''}
+      `;
+    }
+
+    function openConfirm() {
+      document.getElementById('confirmModal').classList.add('is-open');
+    }
+    function closeConfirm() {
+      document.getElementById('confirmModal').classList.remove('is-open');
+    }
+    function doDelete() {
+      const hotels = Utils.getAllHotels();
+      const h = hotels.find(x => x.id === Number(hotelId));
+      if (!h) return;
+      if (stage === 'pitch' && h.stageData?.pitch?.sessions) {
+        h.stageData.pitch.sessions.splice(idx, 1);
+      } else if (stage === 'negotiate' && h.stageData?.negotiate?.rounds) {
+        h.stageData.negotiate.rounds.splice(idx, 1);
+      }
+      h.updatedAt = new Date().toISOString().split('T')[0];
+      Utils.saveHotels(hotels);
+      window.location.href = backUrl;
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>录入 - 奇趣庄园</title>
+  <link rel="stylesheet" href="../assets/css/theme.css?v=6">
+  <link rel="stylesheet" href="../assets/css/common.css?v=6">
+  <link rel="stylesheet" href="../assets/css/pages/stage-action.css?v=6">
+</head>
+<body>
+  <div class="app-wrapper">
+    <div id="header"></div>
+    <main class="page-content page-content--with-header" style="padding-bottom:calc(var(--tabbar-height) + var(--safe-bottom) + 72px);">
+      <div id="formContent"></div>
+    </main>
+    <div class="action-footer action-footer--above-tabbar">
+      <div class="btn btn--primary btn--block btn--lg" id="saveBtn">保存</div>
+    </div>
+    <div id="tabbar"></div>
+  </div>
+
+  <script src="../assets/js/mock/hotels.js?v=5"></script>
+  <script src="../assets/js/utils.js?v=4"></script>
+  <script src="../assets/js/components/header.js?v=4"></script>
+  <script src="../assets/js/components/tabbar.js?v=4"></script>
+  <script>
+    let participants = [];
+
+    const hotelId = Utils.getUrlParam('id');
+    const stage = Utils.getUrlParam('stage');
+    const hotel = Utils.getHotelById(hotelId);
+
+    const STAGE_TITLES = { visit: '案例参观', screening: '意向筛选', pitch: '产品讲解', negotiate: '合作模式', contract: '合同推进' };
+
+    if (!hotel || !stage) {
+      document.getElementById('formContent').innerHTML = '<div class="empty-state mt-xl"><div class="empty-state__icon">🏨</div><div class="empty-state__text">参数错误</div></div>';
+    } else {
+      const backUrl = stage === 'visit' ? `hotel-detail.html?id=${hotelId}` : `stage-detail.html?id=${hotelId}&stage=${stage}`;
+      Header.render('#header', { title: STAGE_TITLES[stage] || '录入', showBack: true, backHref: backUrl });
+      TabBar.render('#tabbar', { active: 'list' });
+      const formMap = { visit: visitForm, screening: screeningForm, pitch: pitchForm, negotiate: negotiateForm, contract: contractForm };
+      if (formMap[stage]) formMap[stage]();
+    }
+
+    function visitForm() {
+      document.getElementById('formContent').innerHTML = `
+        <div class="stage-form">
+          <div class="stage-form__title">添加案例参观</div>
+          <div class="form-group">
+            <label class="form-label form-label--required">参观日期</label>
+            <input class="form-input" id="visitDate" type="date" value="${today()}">
+          </div>
+          <div class="form-group">
+            <label class="form-label form-label--required">案例名称</label>
+            <input class="form-input" id="visitCase" placeholder="请输入参观的酒店案例名称">
+          </div>
+          <div class="form-group">
+            <label class="form-label">参与人员</label>
+            <input class="form-input" id="visitVisitors" placeholder="请输入参与人员姓名，逗号分隔">
+          </div>
+          <div class="form-group">
+            <label class="form-label">参观摘要</label>
+            <textarea class="form-textarea" id="visitSummary" placeholder="请输入参观摘要"></textarea>
+          </div>
+        </div>
+      `;
+    }
+
+    function screeningForm() {
+      const existing = hotel.stageData?.screening?.scores || {};
+      document.getElementById('formContent').innerHTML = `
+        <div class="stage-form">
+          <div class="stage-form__title">意向筛选评分</div>
+          <div class="score-group">
+            <div class="score-group__title">酒店资质维度（30分）</div>
+            ${scoreRow('locationMatch', '地理位置匹配', 10, existing.locationMatch)}
+            ${scoreRow('trafficHealth', '客流健康度', 10, existing.trafficHealth)}
+            ${scoreRow('hotelTierMatch', '酒店档次匹配', 10, existing.hotelTierMatch)}
+          </div>
+          <div class="score-group">
+            <div class="score-group__title">决策人触达维度（30分）</div>
+            ${scoreRow('hasDecisionMaker', '是否触达决策人', 15, existing.hasDecisionMaker)}
+            ${scoreRow('isRealContact', '是否真实联系人', 15, existing.isRealContact)}
+          </div>
+          <div class="score-group">
+            <div class="score-group__title">合作意愿维度（40分）</div>
+            ${scoreRow('interestLevel', '合作兴趣度', 20, existing.interestLevel)}
+            ${scoreRow('pushWillingness', '推进意愿', 10, existing.pushWillingness)}
+            ${scoreRow('guaranteeWillingness', '保底意愿', 10, existing.guaranteeWillingness)}
+          </div>
+          <div class="score-preview">
+            <div>
+              <div class="score-preview__num" id="totalScore">0</div>
+              <div style="font-size:var(--font-xs);color:var(--text-secondary);margin-top:4px;">总分</div>
+            </div>
+            <div id="scoreResultTag"></div>
+          </div>
+        </div>
+      `;
+      calcScore();
+      document.querySelectorAll('.score-input').forEach(i => i.addEventListener('input', calcScore));
+    }
+
+    function scoreRow(key, label, max, val) {
+      return `
+        <div class="score-row">
+          <span class="score-row__label">${label}</span>
+          <div class="score-input-wrap">
+            <input class="score-input" data-key="${key}" data-max="${max}" type="number" min="0" max="${max}" value="${val || 0}">
+            <span class="score-max">/${max}</span>
+          </div>
+        </div>
+      `;
+    }
+
+    function calcScore() {
+      let total = 0;
+      document.querySelectorAll('.score-input').forEach(input => {
+        let v = Number(input.value) || 0;
+        const max = Number(input.dataset.max);
+        if (v > max) { v = max; input.value = max; }
+        if (v < 0) { v = 0; input.value = 0; }
+        total += v;
+      });
+      document.getElementById('totalScore').textContent = total;
+      const result = Utils.classifyScore(total);
+      document.getElementById('scoreResultTag').innerHTML = `
+        <span class="tag tag--${Utils.screenResultTag(result)}">${Utils.screenResultShort(result)}</span>
+        <div style="font-size:var(--font-xs);color:var(--text-secondary);margin-top:6px;">${Utils.screenResultLabel(result)}</div>
+      `;
+    }
+
+    function pitchForm() {
+      participants = [{ name: '', position: '' }];
+      document.getElementById('formContent').innerHTML = `
+        <div class="stage-form">
+          <div class="stage-form__title">添加产品讲解记录</div>
+          <div class="form-group">
+            <label class="form-label form-label--required">讲解日期</label>
+            <input class="form-input" id="pitchDate" type="date" value="${today()}">
+          </div>
+          <div class="form-group">
+            <label class="form-label form-label--required">讲解方式</label>
+            <select class="form-select" id="pitchType">
+              <option value="线下会议">线下会议</option>
+              <option value="线上会议">线上会议</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--spacing-sm);">
+              <span class="form-label" style="margin:0;">酒店参与者</span>
+              <button type="button" class="btn btn--sm btn--ghost" id="addParticipantBtn">+ 添加人员</button>
+            </div>
+            <div id="participantsContainer"></div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">会议纪要</label>
+            <textarea class="form-textarea" id="pitchMinutes" placeholder="请输入会议纪要"></textarea>
+          </div>
+          <div class="form-group">
+            <label class="form-label">AI纪要链接</label>
+            <input class="form-input" id="pitchMinutesLink" placeholder="请粘贴AI生成的纪要链接">
+          </div>
+        </div>
+      `;
+      renderParticipants();
+      document.getElementById('addParticipantBtn').addEventListener('click', () => {
+        participants.push({ name: '', position: '' });
+        renderParticipants();
+      });
+    }
+
+    function renderParticipants() {
+      document.getElementById('participantsContainer').innerHTML = participants.map((p, i) => `
+        <div class="participant-block">
+          ${participants.length > 1 ? `<div class="participant-block__remove" onclick="removeParticipant(${i})">×</div>` : ''}
+          <div class="participant-row">
+            <div class="form-group" style="margin-bottom:0;">
+              <input class="form-input participant-name" data-idx="${i}" value="${p.name}" placeholder="姓名">
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+              <input class="form-input participant-pos" data-idx="${i}" value="${p.position}" placeholder="岗位">
+            </div>
+          </div>
+        </div>
+      `).join('');
+      document.querySelectorAll('.participant-name').forEach(i => i.addEventListener('input', e => { participants[Number(e.target.dataset.idx)].name = e.target.value; }));
+      document.querySelectorAll('.participant-pos').forEach(i => i.addEventListener('input', e => { participants[Number(e.target.dataset.idx)].position = e.target.value; }));
+    }
+
+    window.removeParticipant = (idx) => { participants.splice(idx, 1); renderParticipants(); };
+
+    function negotiateForm() {
+      document.getElementById('formContent').innerHTML = `
+        <div class="stage-form">
+          <div class="stage-form__title">添加谈判记录</div>
+          <div class="form-group">
+            <label class="form-label form-label--required">谈判日期</label>
+            <input class="form-input" id="negDate" type="date" value="${today()}">
+          </div>
+          <div class="form-group">
+            <label class="form-label">酒店方参与者</label>
+            <input class="form-input" id="negHotelParty" placeholder="请输入酒店方参与人员姓名">
+          </div>
+          <div class="form-group">
+            <label class="form-label">我方参与者</label>
+            <input class="form-input" id="negOurParty" placeholder="请输入我方参与人员姓名">
+          </div>
+          <div class="form-group">
+            <label class="form-label form-label--required">商务模式</label>
+            <select class="form-select" id="negMode">
+              <option value="">请选择</option>
+              <option value="旺季保底">旺季保底</option>
+              <option value="全年保底">全年保底</option>
+              <option value="买断">买断</option>
+            </select>
+          </div>
+          <div id="negTermsFields" style="display:none;" class="terms-fields">
+            <div class="terms-fields__title" id="negTermsTitle">商务条款详情</div>
+            <div id="negTermsContent"></div>
+          </div>
+          <div class="form-group mt-lg">
+            <label class="form-label">谈判摘要</label>
+            <textarea class="form-textarea" id="negDesc" placeholder="请描述本轮谈判关键内容"></textarea>
+          </div>
+          <div class="form-group">
+            <label class="form-label">AI纪要链接（可选）</label>
+            <input class="form-input" id="negMinutesLink" placeholder="请粘贴AI纪要链接">
+          </div>
+        </div>
+      `;
+      document.getElementById('negMode').addEventListener('change', renderNegTerms);
+    }
+
+    function renderNegTerms() {
+      const mode = document.getElementById('negMode').value;
+      const fieldsEl = document.getElementById('negTermsFields');
+      const contentEl = document.getElementById('negTermsContent');
+      if (!mode) { fieldsEl.style.display = 'none'; return; }
+      fieldsEl.style.display = 'block';
+      contentEl.innerHTML = termsFieldsHtml(mode, 'neg');
+    }
+
+    function contractForm() {
+      const ct = hotel.stageData?.contract || {};
+      document.getElementById('formContent').innerHTML = `
+        <div class="stage-form">
+          <div class="stage-form__title">合同推进</div>
+          <div class="form-group">
+            <label class="form-label">合同版本</label>
+            <input class="form-input" id="ctVersion" value="${ct.version || ''}" placeholder="如V1.0">
+          </div>
+          <div class="form-group">
+            <label class="form-label">审批状态</label>
+            <select class="form-select" id="ctReview">
+              <option value="" ${!ct.reviewStatus ? 'selected' : ''}>未开始</option>
+              <option value="reviewing" ${ct.reviewStatus === 'reviewing' ? 'selected' : ''}>审核中</option>
+              <option value="approved" ${ct.reviewStatus === 'approved' ? 'selected' : ''}>已审批</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">我方签署日期</label>
+            <input class="form-input" id="ctOurDate" type="date" value="${ct.ourSignDate || ''}">
+          </div>
+          <div class="form-group">
+            <label class="form-label">酒店签署日期</label>
+            <input class="form-input" id="ctHotelDate" type="date" value="${ct.hotelSignDate || ''}">
+          </div>
+          <div class="form-group">
+            <label class="form-label form-label--required">商务模式</label>
+            <select class="form-select" id="ctMode">
+              <option value="" ${!ct.finalTerms?.mode ? 'selected' : ''}>请选择</option>
+              <option value="旺季保底" ${ct.finalTerms?.mode === '旺季保底' ? 'selected' : ''}>旺季保底</option>
+              <option value="全年保底" ${ct.finalTerms?.mode === '全年保底' ? 'selected' : ''}>全年保底</option>
+              <option value="买断" ${ct.finalTerms?.mode === '买断' ? 'selected' : ''}>买断</option>
+            </select>
+          </div>
+          <div id="ctTermsFields" style="${ct.finalTerms?.mode ? '' : 'display:none;'}" class="terms-fields">
+            <div class="terms-fields__title">最终商务条款</div>
+            <div id="ctTermsContent">${ct.finalTerms?.mode ? termsFieldsHtml(ct.finalTerms.mode, 'ct', ct.finalTerms) : ''}</div>
+          </div>
+        </div>
+      `;
+      document.getElementById('ctMode').addEventListener('change', () => {
+        const mode = document.getElementById('ctMode').value;
+        const fieldsEl = document.getElementById('ctTermsFields');
+        const contentEl = document.getElementById('ctTermsContent');
+        if (!mode) { fieldsEl.style.display = 'none'; return; }
+        fieldsEl.style.display = 'block';
+        contentEl.innerHTML = termsFieldsHtml(mode, 'ct');
+      });
+    }
+
+    function termsFieldsHtml(mode, prefix, existing = {}) {
+      const v = (f) => existing[f] || '';
+      let rows = '';
+      if (mode === '旺季保底') {
+        rows = `
+          <div class="form-group"><label class="form-label">旺季保底价（元）</label><input class="form-input" id="${prefix}_peakGuarantee" value="${v('peakGuarantee')}" placeholder="如50元/间"></div>
+          <div class="form-group"><label class="form-label">亲子房数量</label><input class="form-input" id="${prefix}_rooms" type="number" value="${v('rooms')}" placeholder="请输入"></div>
+          <div class="form-group"><label class="form-label">合作期限</label><input class="form-input" id="${prefix}_period" value="${v('period')}" placeholder="如3年"></div>
+          <div class="form-group"><label class="form-label">旺季分成</label><input class="form-input" id="${prefix}_peakShare" value="${v('peakShare')}" placeholder="如15%"></div>
+          <div class="form-group"><label class="form-label">淡季分成</label><input class="form-input" id="${prefix}_offShare" value="${v('offShare')}" placeholder="如10%"></div>
+        `;
+      } else if (mode === '全年保底') {
+        rows = `
+          <div class="form-group"><label class="form-label">全年保底价（元）</label><input class="form-input" id="${prefix}_yearGuarantee" value="${v('yearGuarantee')}" placeholder="如75元/间"></div>
+          <div class="form-group"><label class="form-label">亲子房数量</label><input class="form-input" id="${prefix}_rooms" type="number" value="${v('rooms')}" placeholder="请输入"></div>
+          <div class="form-group"><label class="form-label">合作期限</label><input class="form-input" id="${prefix}_period" value="${v('period')}" placeholder="如5年"></div>
+          <div class="form-group"><label class="form-label">旺季分成</label><input class="form-input" id="${prefix}_peakShare" value="${v('peakShare')}" placeholder="如20%"></div>
+          <div class="form-group"><label class="form-label">淡季分成</label><input class="form-input" id="${prefix}_offShare" value="${v('offShare')}" placeholder="如15%"></div>
+        `;
+      } else if (mode === '买断') {
+        rows = `
+          <div class="form-group"><label class="form-label">买断总价（万元）</label><input class="form-input" id="${prefix}_buyout" value="${v('buyout')}" placeholder="如200万"></div>
+          <div class="form-group"><label class="form-label">亲子房数量</label><input class="form-input" id="${prefix}_rooms" type="number" value="${v('rooms')}" placeholder="请输入"></div>
+          <div class="form-group"><label class="form-label">合作期限</label><input class="form-input" id="${prefix}_period" value="${v('period')}" placeholder="如5年"></div>
+          <div class="form-group"><label class="form-label">旺季分成</label><input class="form-input" id="${prefix}_peakShare" value="${v('peakShare')}" placeholder="如20%"></div>
+          <div class="form-group"><label class="form-label">淡季分成</label><input class="form-input" id="${prefix}_offShare" value="${v('offShare')}" placeholder="如15%"></div>
+        `;
+      }
+      return `<div class="terms-grid">${rows}</div>`;
+    }
+
+    document.getElementById('saveBtn').addEventListener('click', () => {
+      const hotels = Utils.getAllHotels();
+      const h = hotels.find(x => x.id === Number(hotelId));
+      if (!h) { alert('酒店不存在'); return; }
+      if (!h.stageData) h.stageData = {};
+
+      try {
+        const saveMap = { visit: saveVisit, screening: saveScreening, pitch: savePitch, negotiate: saveNegotiate, contract: saveContract };
+        if (saveMap[stage]) saveMap[stage](h);
+        h.updatedAt = new Date().toISOString().split('T')[0];
+        Utils.saveHotels(hotels);
+        if (stage === 'visit') {
+          window.location.href = `hotel-detail.html?id=${hotelId}`;
+        } else {
+          window.location.href = `stage-detail.html?id=${hotelId}&stage=${stage}`;
+        }
+      } catch (e) {
+        if (e.message !== 'validate') throw e;
+      }
+    });
+
+    function saveVisit(h) {
+      const caseName = document.getElementById('visitCase').value.trim();
+      if (!caseName) { alert('请输入案例名称'); throw new Error('validate'); }
+      if (!h.stageData.visit) h.stageData.visit = { records: [], hasVisit: false };
+      h.stageData.visit.records.push({
+        date: document.getElementById('visitDate').value,
+        caseName,
+        visitors: document.getElementById('visitVisitors').value.trim(),
+        summary: document.getElementById('visitSummary').value.trim()
+      });
+      h.stageData.visit.records.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+      h.stageData.visit.hasVisit = true;
+    }
+
+    function saveScreening(h) {
+      const scores = {};
+      document.querySelectorAll('.score-input').forEach(input => { scores[input.dataset.key] = Number(input.value) || 0; });
+      const total = Object.values(scores).reduce((a, b) => a + b, 0);
+      h.stageData.screening = {
+        scores,
+        totalScore: total,
+        result: Utils.classifyScore(total),
+        completed: h.stageData.screening?.completed || false
+      };
+    }
+
+    function savePitch(h) {
+      if (!h.stageData.pitch) h.stageData.pitch = { sessions: [], completed: false };
+      h.stageData.pitch.sessions.push({
+        date: document.getElementById('pitchDate').value,
+        type: document.getElementById('pitchType').value,
+        hotelParticipants: participants.filter(p => p.name),
+        minutes: document.getElementById('pitchMinutes').value.trim(),
+        minutesLink: document.getElementById('pitchMinutesLink').value.trim()
+      });
+      h.stageData.pitch.sessions.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+    }
+
+    function saveNegotiate(h) {
+      const mode = document.getElementById('negMode').value;
+      if (!mode) { alert('请选择商务模式'); throw new Error('validate'); }
+      if (!h.stageData.negotiate) h.stageData.negotiate = { rounds: [], completed: false };
+      h.stageData.negotiate.rounds.push({
+        date: document.getElementById('negDate').value,
+        hotelParticipants: document.getElementById('negHotelParty').value.trim(),
+        ourParticipants: document.getElementById('negOurParty').value.trim(),
+        terms: readTermsFields('neg', mode),
+        description: document.getElementById('negDesc').value.trim(),
+        minutesLink: document.getElementById('negMinutesLink').value.trim()
+      });
+      h.stageData.negotiate.rounds.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+    }
+
+    function saveContract(h) {
+      const mode = document.getElementById('ctMode').value;
+      const ourDate = document.getElementById('ctOurDate').value;
+      const hotelDate = document.getElementById('ctHotelDate').value;
+      const isCompleted = !!(ourDate && hotelDate);
+      h.stageData.contract = {
+        version: document.getElementById('ctVersion').value.trim(),
+        reviewStatus: document.getElementById('ctReview').value,
+        ourSignDate: ourDate,
+        hotelSignDate: hotelDate,
+        finalTerms: mode ? readTermsFields('ct', mode) : { mode: '' },
+        completed: isCompleted
+      };
+      if (isCompleted) h.signedAt = hotelDate;
+    }
+
+    function readTermsFields(prefix, mode) {
+      const g = (id) => { const el = document.getElementById(`${prefix}_${id}`); return el ? el.value.trim() : ''; };
+      const terms = { mode };
+      if (mode === '旺季保底') { terms.peakGuarantee = g('peakGuarantee'); terms.rooms = g('rooms'); terms.period = g('period'); terms.peakShare = g('peakShare'); terms.offShare = g('offShare'); }
+      if (mode === '全年保底') { terms.yearGuarantee = g('yearGuarantee'); terms.rooms = g('rooms'); terms.period = g('period'); terms.peakShare = g('peakShare'); terms.offShare = g('offShare'); }
+      if (mode === '买断')    { terms.buyout = g('buyout'); terms.rooms = g('rooms'); terms.period = g('period'); terms.peakShare = g('peakShare'); terms.offShare = g('offShare'); }
+      return terms;
+    }
+
+    function today() { return new Date().toISOString().split('T')[0]; }
+  </script>
+</body>
+</html>

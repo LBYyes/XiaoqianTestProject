@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>财务酒店档案管理 - 奇趣XR酒店管理平台</title>
+  <link rel="stylesheet" href="../assets/css/theme.css?v=18">
+  <link rel="stylesheet" href="../assets/css/common.css?v=18">
+  <link rel="stylesheet" href="../assets/css/pages/ops.css?v=18">
+</head>
+<body>
+  <div class="app-wrapper">
+    <div id="header"></div>
+    <main class="page-content page-content--with-header">
+      <div class="search-bar" style="margin-bottom:var(--spacing-sm);">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+        <input type="text" id="searchInput" placeholder="搜索酒店名称">
+      </div>
+      <div class="ops-filter-row ops-filter-row--three">
+        <select class="form-select form-select--sm" id="opsFilter"></select>
+        <select class="form-select form-select--sm" id="salesFilter"></select>
+        <select class="form-select form-select--sm" id="provinceFilter"></select>
+      </div>
+      <div class="ops-filter-row ops-filter-row--single">
+        <select class="form-select form-select--sm" id="auditFilter"></select>
+      </div>
+      <div class="ops-summary" id="summaryText"></div>
+      <div id="listRoot"></div>
+    </main>
+  </div>
+
+  <script src="../assets/js/mock/operations.js?v=18"></script>
+  <script src="../assets/js/utils.js?v=18"></script>
+  <script src="../assets/js/components/header.js?v=18"></script>
+  <script>
+    const role = (Utils.getUrlParam('role') || 'finance').trim();
+    Header.render('#header', {
+      title: '酒店档案管理',
+      showBack: true,
+      backHref: `ops-board.html?role=${encodeURIComponent(role)}&ops=all`
+    });
+
+    let keyword = '';
+    let opsFilter = 'all';
+    let salesFilter = 'all';
+    let provinceFilter = 'all';
+    let auditFilter = 'all';
+
+    function render() {
+      const allHotels = Utils.getOpsHotels();
+      const kw = keyword.toLowerCase();
+      const keywordFiltered = allHotels.filter((h) => !kw || (h.name || '').toLowerCase().includes(kw));
+
+      const opsOptions = [...new Set(keywordFiltered.map((h) => h.ownerOps).filter(Boolean))];
+      const salesOptions = [...new Set(keywordFiltered.map((h) => h.ownerSales).filter(Boolean))];
+      const provinceOptions = [...new Set(keywordFiltered.map((h) => h.province).filter(Boolean))];
+      const auditOptions = ['pending_submit', 'pending_finance', 'approved'];
+
+      if (opsFilter !== 'all' && !opsOptions.includes(opsFilter)) opsFilter = 'all';
+      if (salesFilter !== 'all' && !salesOptions.includes(salesFilter)) salesFilter = 'all';
+      if (provinceFilter !== 'all' && !provinceOptions.includes(provinceFilter)) provinceFilter = 'all';
+      if (auditFilter !== 'all' && !auditOptions.includes(auditFilter)) auditFilter = 'all';
+
+      document.getElementById('opsFilter').innerHTML = `
+        <option value="all">全部运营</option>
+        ${opsOptions.map((x) => `<option value="${x}">${x}</option>`).join('')}
+      `;
+      document.getElementById('salesFilter').innerHTML = `
+        <option value="all">全部销售</option>
+        ${salesOptions.map((x) => `<option value="${x}">${x}</option>`).join('')}
+      `;
+      document.getElementById('provinceFilter').innerHTML = `
+        <option value="all">全部省份</option>
+        ${provinceOptions.map((x) => `<option value="${x}">${x}</option>`).join('')}
+      `;
+      document.getElementById('auditFilter').innerHTML = `
+        <option value="all">全部审核状态</option>
+        ${auditOptions.map((x) => `<option value="${x}">${Utils.getAuditStatusMeta(x).label}</option>`).join('')}
+      `;
+      document.getElementById('opsFilter').value = opsFilter;
+      document.getElementById('salesFilter').value = salesFilter;
+      document.getElementById('provinceFilter').value = provinceFilter;
+      document.getElementById('auditFilter').value = auditFilter;
+
+      const list = keywordFiltered.filter((h) => {
+        const byOps = opsFilter === 'all' || h.ownerOps === opsFilter;
+        const bySales = salesFilter === 'all' || h.ownerSales === salesFilter;
+        const byProvince = provinceFilter === 'all' || h.province === provinceFilter;
+        const byAudit = auditFilter === 'all' || h.auditStatus === auditFilter;
+        return byOps && bySales && byProvince && byAudit;
+      });
+
+      document.getElementById('summaryText').textContent = `共 ${list.length} 家酒店`;
+      const root = document.getElementById('listRoot');
+      if (!list.length) {
+        root.innerHTML = '<div class="empty-state"><div class="empty-state__icon">🏨</div><div class="empty-state__text">暂无酒店数据</div></div>';
+        return;
+      }
+      root.innerHTML = list.map((h) => `
+        <a class="ops-hotel-item" href="finance-hotel-manage-edit.html?role=${encodeURIComponent(role)}&id=${encodeURIComponent(h.id)}">
+          <div class="ops-hotel-item__head">
+            <div class="ops-hotel-item__name">${h.name || '-'}</div>
+            <span class="tag tag--${Utils.getAuditStatusMeta(h.auditStatus).tag}">${Utils.getAuditStatusMeta(h.auditStatus).label}</span>
+          </div>
+          <div class="ops-hotel-item__meta">${h.province || '-'} · 上线时间 ${h.launchDate || '-'}</div>
+          <div class="ops-hotel-item__meta">运营：${h.ownerOps || '-'} · 销售：${h.ownerSales || '-'}</div>
+          <div class="ops-hotel-item__meta">合作模式：${Utils.getBusinessModeLabel(h.businessTerms?.mode)} · 合作间数：${Utils.calcOpsRoomTotal(h.roomTypes)}间</div>
+        </a>
+      `).join('');
+    }
+
+    document.getElementById('searchInput').addEventListener('input', (e) => {
+      keyword = e.target.value.trim();
+      render();
+    });
+    document.getElementById('opsFilter').addEventListener('change', (e) => {
+      opsFilter = e.target.value;
+      render();
+    });
+    document.getElementById('salesFilter').addEventListener('change', (e) => {
+      salesFilter = e.target.value;
+      render();
+    });
+    document.getElementById('provinceFilter').addEventListener('change', (e) => {
+      provinceFilter = e.target.value;
+      render();
+    });
+    document.getElementById('auditFilter').addEventListener('change', (e) => {
+      auditFilter = e.target.value;
+      render();
+    });
+
+    render();
+  </script>
+</body>
+</html>

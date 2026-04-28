@@ -1,0 +1,319 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>种草监控 - 酒店详情 - 奇趣XR酒店管理平台</title>
+  <link rel="stylesheet" href="../assets/css/theme.css?v=77">
+  <link rel="stylesheet" href="../assets/css/common.css?v=77">
+  <link rel="stylesheet" href="../assets/css/pages/ops.css?v=77">
+</head>
+<body>
+  <div class="app-wrapper">
+    <div id="header"></div>
+    <main class="page-content page-content--with-header">
+
+      <!-- 酒店信息卡 -->
+      <section class="sm-detail-card" id="hotelCard"></section>
+
+      <!-- 平台明细 -->
+      <section class="sm-section">
+        <div class="sm-section__head">
+          <div class="sm-section__title">平台明细</div>
+          <div class="sm-section__hint">所选时段内各平台发布/曝光/互动汇总</div>
+        </div>
+        <div style="overflow-x:auto;">
+          <table class="sm-detail-table" id="platformTable">
+            <colgroup>
+              <col style="width:22%">
+              <col style="width:18%">
+              <col style="width:21%">
+              <col style="width:21%">
+              <col style="width:18%">
+            </colgroup>
+            <thead>
+              <tr>
+                <th>平台</th>
+                <th>发布</th>
+                <th>曝光</th>
+                <th>互动</th>
+                <th>互动率</th>
+              </tr>
+            </thead>
+            <tbody id="platformTbody"></tbody>
+            <tfoot id="platformTfoot"></tfoot>
+          </table>
+        </div>
+      </section>
+
+      <!-- 账号明细（矩阵号 → 平台 → 账号 二级分组）-->
+      <section class="sm-section">
+        <div class="sm-section__head">
+          <div class="sm-section__title">账号明细</div>
+          <div class="sm-section__hint">按「矩阵号 → 平台」二级分组；同一逻辑账号在不同平台为独立账号</div>
+        </div>
+        <div id="matrixGroupList"></div>
+      </section>
+
+      <!-- 发布记录 -->
+      <section class="sm-section">
+        <div class="sm-section__head">
+          <div class="sm-section__title">发布记录</div>
+          <div class="sm-section__hint">按日期倒序，单条发布的曝光/互动按日均拆分</div>
+        </div>
+        <div style="overflow-x:auto;">
+          <table class="sm-detail-table" id="postTable">
+            <colgroup>
+              <col style="width:11%">
+              <col style="width:13%">
+              <col style="width:10%">
+              <col style="width:9%">
+              <col style="width:24%">
+              <col style="width:9%">
+              <col style="width:8%">
+              <col style="width:8%">
+              <col style="width:8%">
+            </colgroup>
+            <thead>
+              <tr>
+                <th>日期</th>
+                <th>账号</th>
+                <th>矩阵号</th>
+                <th>平台</th>
+                <th>标题</th>
+                <th>曝光</th>
+                <th>赞</th>
+                <th>互动</th>
+                <th>互动率</th>
+              </tr>
+            </thead>
+            <tbody id="postTbody"></tbody>
+          </table>
+        </div>
+        <div class="sm-section__hint" id="postCountHint" style="margin-top:6px;"></div>
+      </section>
+    </main>
+  </div>
+
+  <script src="../assets/js/mock/operations.js?v=77"></script>
+  <script src="../assets/js/mock/seed-monitor.js?v=77"></script>
+  <script src="../assets/js/utils.js?v=77"></script>
+  <script src="../assets/js/components/header.js?v=77"></script>
+  <script>
+    const role = (Utils.getUrlParam('role') || 'middle').trim();
+    const hotelId = Number(Utils.getUrlParam('hotelId') || '');
+    const periodMode = (Utils.getUrlParam('periodMode') || 'month').trim();
+    const periodAnchor = (Utils.getUrlParam('periodAnchor') || '').trim();
+    const customStart = (Utils.getUrlParam('customStart') || '').trim();
+    const customEnd = (Utils.getUrlParam('customEnd') || '').trim();
+
+    const hotel = Utils.getSeedHotelById(hotelId);
+    const backHref = `ops-seed-monitor-list.html?role=${encodeURIComponent(role)}`;
+
+    Header.render('#header', {
+      title: hotel ? `${hotel.name}` : '酒店详情',
+      showBack: true,
+      backHref
+    });
+
+    function fmtNum(n) {
+      const v = Math.round(Number(n) || 0);
+      return v.toLocaleString('zh-CN');
+    }
+    function fmtPct(rate, digits = 2) {
+      const v = Number(rate) || 0;
+      return `${(v * 100).toFixed(digits)}%`;
+    }
+    function fmtDateLabel(s) {
+      const str = String(s || '');
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+      return `${str.slice(0,4)}/${str.slice(5,7)}/${str.slice(8,10)}`;
+    }
+    function dash() { return '<span class="sm-dash">-</span>'; }
+    function statusToChip(status, labelMap) {
+      const map = labelMap || { qualified: '达标', near: '接近', unqualified: '未达标' };
+      const cls = status === 'qualified' ? 'sm-chip--ok'
+        : status === 'near' ? 'sm-chip--warn' : 'sm-chip--bad';
+      return `<span class="sm-chip ${cls}">${map[status] || '-'}</span>`;
+    }
+    function statusToNumClass(status) {
+      return status === 'qualified' ? 'sm-num--ok'
+        : status === 'near' ? 'sm-num--warn' : 'sm-num--bad';
+    }
+
+    function renderError(msg) {
+      document.getElementById('hotelCard').innerHTML = `
+        <div class="sm-detail-card__head">
+          <div class="sm-detail-card__title">参数异常</div>
+        </div>
+        <div class="sm-detail-card__sub">${msg} <a href="${backHref}">返回种草监控</a></div>
+      `;
+    }
+
+    if (!hotel) {
+      renderError('未找到对应酒店。');
+    } else {
+      const range = Utils.getSeedDateRangeByPeriod(periodMode, periodAnchor, customStart, customEnd);
+      const data = Utils.aggregateSeedHotelDetail({
+        hotelId, startDate: range.startDate, endDate: range.endDate
+      });
+      const summary = data.summary;
+      const periodLabel = periodMode === 'day' ? fmtDateLabel(range.startDate)
+        : periodMode === 'month' ? `${range.startDate.slice(0, 7).replace('-', '/')}（${fmtDateLabel(range.startDate)} ~ ${fmtDateLabel(range.endDate)}）`
+        : `${fmtDateLabel(range.startDate)} ~ ${fmtDateLabel(range.endDate)}`;
+
+      // —— 酒店信息卡 ——
+      document.getElementById('hotelCard').innerHTML = `
+        <div class="sm-detail-card__head">
+          <div class="sm-detail-card__title">
+            <span>${hotel.name}</span>
+            <span class="sm-chip sm-chip--info">${hotel.province || '-'}</span>
+          </div>
+          <div class="sm-detail-card__sub">
+            ${periodLabel}
+            <span class="sm-detail-card__sub-sep">·</span>
+            运营 ${hotel.ownerOps || '-'}
+            <span class="sm-detail-card__sub-sep">·</span>
+            销售 ${hotel.ownerSales || '-'}
+            ${hotel.launchDate ? `<span class="sm-detail-card__sub-sep">·</span> 上线 ${fmtDateLabel(hotel.launchDate)}` : ''}
+          </div>
+        </div>
+        <div class="sm-detail-card__metrics">
+          <div class="sm-detail-card__metric">
+            <div class="sm-detail-card__metric-label">总发布</div>
+            <div class="sm-detail-card__metric-value">${fmtNum(summary.posts)}<span style="font-size:13px;color:#94a3b8;font-weight:500;"> 篇</span></div>
+          </div>
+          <div class="sm-detail-card__metric">
+            <div class="sm-detail-card__metric-label">总曝光</div>
+            <div class="sm-detail-card__metric-value">${summary.exposure > 0 ? fmtNum(summary.exposure) : '-'}</div>
+          </div>
+          <div class="sm-detail-card__metric">
+            <div class="sm-detail-card__metric-label">总互动</div>
+            <div class="sm-detail-card__metric-value">${summary.interact > 0 ? fmtNum(summary.interact) : '-'}</div>
+            <div class="sm-detail-card__metric-label" style="margin-top:2px;">赞 ${fmtNum(summary.likes)} · 评 ${fmtNum(summary.comments)} · 藏 ${fmtNum(summary.favorites)} · 转 ${fmtNum(summary.shares)}</div>
+          </div>
+          <div class="sm-detail-card__metric">
+            <div class="sm-detail-card__metric-label">互动率</div>
+            <div class="sm-detail-card__metric-value">${summary.exposure > 0 ? fmtPct(summary.engRate) : '-'}</div>
+          </div>
+        </div>
+      `;
+
+      // —— 平台明细 ——
+      const ptbody = document.getElementById('platformTbody');
+      const ptfoot = document.getElementById('platformTfoot');
+      const platforms = Utils.getSeedPlatforms();
+      ptbody.innerHTML = platforms.map((p) => {
+        const bp = summary.byPlatform[p.id] || { posts: 0, exposure: 0, interact: 0, engRate: 0 };
+        return `
+          <tr>
+            <td><strong>${p.label}</strong></td>
+            <td>${bp.posts > 0 ? fmtNum(bp.posts) : dash()}</td>
+            <td>${bp.exposure > 0 ? fmtNum(bp.exposure) : dash()}</td>
+            <td>${bp.interact > 0 ? fmtNum(bp.interact) : dash()}</td>
+            <td>${bp.exposure > 0 ? fmtPct(bp.engRate) : dash()}</td>
+          </tr>
+        `;
+      }).join('');
+      ptfoot.innerHTML = `
+        <tr>
+          <td>合计</td>
+          <td><strong>${fmtNum(summary.posts)}</strong></td>
+          <td><strong>${summary.exposure > 0 ? fmtNum(summary.exposure) : '-'}</strong></td>
+          <td><strong>${summary.interact > 0 ? fmtNum(summary.interact) : '-'}</strong></td>
+          <td><strong>${summary.exposure > 0 ? fmtPct(summary.engRate) : '-'}</strong></td>
+        </tr>
+      `;
+
+      // —— 账号明细：矩阵号 → 平台 二级分组 ——
+      const groupList = document.getElementById('matrixGroupList');
+      if (!data.byMatrix.length) {
+        groupList.innerHTML = '<div class="sm-empty">该时段内无账号活跃</div>';
+      } else {
+        groupList.innerHTML = data.byMatrix.map((g) => {
+          const platformBlocks = (g.byPlatform || []).map((pg) => {
+            const accountsHtml = pg.accounts.map((a) => `
+              <tr>
+                <td class="sm-detail-table__acc">${a.nickname}</td>
+                <td>${a.posts > 0 ? `<strong>${fmtNum(a.posts)}</strong>` : dash()}</td>
+                <td>${a.exposure > 0 ? fmtNum(a.exposure) : dash()}</td>
+                <td>${a.interact > 0 ? fmtNum(a.interact) : dash()}</td>
+                <td>${a.exposure > 0 ? `<span class="${statusToNumClass(a.engStatus)}">${fmtPct(a.engRate)}</span>` : dash()}</td>
+              </tr>
+            `).join('');
+            return `
+              <div class="sm-platform-sub">
+                <div class="sm-platform-sub__head">
+                  <span class="sm-platform-sub__name sm-platform-sub__name--${pg.platform}">${pg.platformLabel}</span>
+                  <span class="sm-platform-sub__meta">${pg.accounts.length} 账号 · ${fmtNum(pg.subtotal.posts)} 篇 · 互动率 ${pg.subtotal.exposure > 0 ? fmtPct(pg.subtotal.engRate) : '-'}</span>
+                </div>
+                <div style="overflow-x:auto;">
+                  <table class="sm-detail-table sm-detail-table--sub">
+                    <colgroup>
+                      <col style="width:34%">
+                      <col style="width:14%">
+                      <col style="width:18%">
+                      <col style="width:18%">
+                      <col style="width:16%">
+                    </colgroup>
+                    <thead>
+                      <tr>
+                        <th>账号</th>
+                        <th>已发</th>
+                        <th>曝光</th>
+                        <th>互动</th>
+                        <th>互动率</th>
+                      </tr>
+                    </thead>
+                    <tbody>${accountsHtml}</tbody>
+                  </table>
+                </div>
+              </div>
+            `;
+          }).join('');
+
+          return `
+            <div class="sm-matrix-section">
+              <div class="sm-matrix-section__head">
+                <span class="sm-matrix-section__name">${g.label}</span>
+                <span class="sm-matrix-section__meta">${g.accountCount} 账号 · ${fmtNum(g.total.posts)} 篇 · 互动率门槛 ${fmtPct(g.engagementThreshold, 1)}</span>
+              </div>
+              ${platformBlocks || '<div class="sm-empty sm-empty--inline">该矩阵在本酒店本时段内无发布</div>'}
+            </div>
+          `;
+        }).join('');
+      }
+
+      // —— 发布记录 ——
+      const postTbody = document.getElementById('postTbody');
+      const postCountHint = document.getElementById('postCountHint');
+      const MAX_ROWS = 200;
+      if (!data.posts.length) {
+        postTbody.innerHTML = `<tr class="sm-detail-table__empty"><td colspan="9">该时段内暂无发布记录</td></tr>`;
+        postCountHint.textContent = '';
+      } else {
+        const sliced = data.posts.slice(0, MAX_ROWS);
+        postTbody.innerHTML = sliced.map((p) => {
+          const interact = (p.likes || 0) + (p.comments || 0) + (p.favorites || 0) + (p.shares || 0);
+          return `
+            <tr>
+              <td class="sm-detail-table__date">${fmtDateLabel(p.date)}</td>
+              <td class="sm-detail-table__acc">${p.accountNickname}</td>
+              <td>${p.matrixLabel}</td>
+              <td>${Utils.getSeedPlatformLabel(p.platform)}</td>
+              <td class="sm-detail-table__title" title="${p.title}">${p.title}</td>
+              <td>${fmtNum(p.exposure)}</td>
+              <td>${fmtNum(p.likes)}</td>
+              <td>${fmtNum(interact)}</td>
+              <td><span class="${statusToNumClass(p.engStatus)}">${fmtPct(p.engagementRate)}</span></td>
+            </tr>
+          `;
+        }).join('');
+        postCountHint.textContent = data.posts.length > MAX_ROWS
+          ? `共 ${data.posts.length} 条发布记录，已展示前 ${MAX_ROWS} 条；如需更长时段，请在列表页缩小时间范围`
+          : `共 ${data.posts.length} 条发布记录`;
+      }
+    }
+  </script>
+</body>
+</html>

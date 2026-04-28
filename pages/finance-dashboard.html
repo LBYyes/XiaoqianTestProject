@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>财务数据看板 - 奇趣XR酒店管理平台</title>
+  <link rel="stylesheet" href="../assets/css/theme.css?v=26">
+  <link rel="stylesheet" href="../assets/css/common.css?v=26">
+  <link rel="stylesheet" href="../assets/css/pages/ops.css?v=26">
+</head>
+<body>
+  <div class="app-wrapper">
+    <div id="header"></div>
+    <main class="page-content page-content--with-header">
+      <div class="ops-time-bar">
+        <div class="ops-time-tabs" id="rangeTabs">
+          <button class="ops-time-tab" data-range="custom">自定义</button>
+          <button class="ops-time-tab ops-time-tab--active" data-range="year">年</button>
+        </div>
+        <div class="ops-period-switch" id="yearRow">
+          <button class="btn btn--ghost btn--sm" id="yearPrevBtn" type="button">‹</button>
+          <div class="ops-period-switch__label" id="yearLabel"></div>
+          <button class="btn btn--ghost btn--sm" id="yearNextBtn" type="button">›</button>
+        </div>
+        <div class="ops-custom-date-row" id="customMonthRow" style="display:none;">
+          <input type="month" id="customFrom" class="form-input">
+          <span>至</span>
+          <input type="month" id="customTo" class="form-input">
+        </div>
+      </div>
+
+      <div class="fin-filter-row">
+        <button class="fin-filter-btn" id="provinceBtn" type="button">
+          <span class="fin-filter-btn__label" id="provinceLabel">省份（all）</span>
+          <span class="fin-filter-btn__arrow">▾</span>
+        </button>
+      </div>
+
+      <div class="ops-summary" id="summaryText"></div>
+
+      <div id="emptyRoot" style="display:none;">
+        <div class="empty-state">
+          <div class="empty-state__icon">📈</div>
+          <div class="empty-state__text" id="emptyText">暂无可用数据</div>
+        </div>
+      </div>
+
+      <div id="contentRoot">
+        <section class="ops-dashboard-card">
+          <div class="ops-dashboard-card__head">
+            <div class="ops-dashboard-card__title">核心指标</div>
+            <div class="ops-dashboard-card__desc" id="kpiDesc"></div>
+          </div>
+          <div class="fin-kpi-grid" id="kpiGrid"></div>
+        </section>
+
+        <section class="ops-dashboard-card" id="compareSection">
+          <div class="ops-dashboard-card__head">
+            <div>
+              <div class="ops-dashboard-card__title" id="compareTitle">单间收益 · 跨月对比</div>
+              <div class="ops-dashboard-card__desc" id="compareDesc"></div>
+            </div>
+            <div class="fin-tab-row" id="compareMetricTabs">
+              <button class="fin-tab fin-tab--active" data-metric="avgRevenue">单间收益</button>
+              <button class="fin-tab" data-metric="revenue">总收益</button>
+            </div>
+          </div>
+          <div class="fin-compare-wrap">
+            <table class="fin-compare-table" id="compareTable"></table>
+          </div>
+        </section>
+
+        <section class="ops-dashboard-card" id="trendSection">
+          <div class="ops-dashboard-card__head ops-dashboard-card__head--with-tabs">
+            <div>
+              <div class="ops-dashboard-card__title">单间收益走势（按省份）</div>
+              <div class="ops-dashboard-card__desc" id="trendDesc"></div>
+            </div>
+            <button class="btn btn--ghost btn--sm" id="trendToggleBtn" type="button">查看全部</button>
+          </div>
+          <div id="trendList"></div>
+        </section>
+
+        <section class="ops-dashboard-card" id="detailSection">
+          <div class="ops-dashboard-card__head ops-dashboard-card__head--with-tabs">
+            <div>
+              <div class="ops-dashboard-card__title">月度明细</div>
+              <div class="ops-dashboard-card__desc" id="detailDesc"></div>
+            </div>
+            <button class="fin-filter-btn fin-filter-btn--inline" id="detailMonthBtn" type="button">
+              <span class="fin-filter-btn__label" id="detailMonthLabel">月份（all）</span>
+              <span class="fin-filter-btn__arrow">▾</span>
+            </button>
+          </div>
+          <div id="monthDetailList"></div>
+        </section>
+      </div>
+    </main>
+
+    <div class="fin-popup" id="popup" style="display:none;">
+      <div class="fin-popup__mask" id="popupMask"></div>
+      <div class="fin-popup__sheet">
+        <div class="fin-popup__head">
+          <div class="fin-popup__title" id="popupTitle">筛选</div>
+          <button class="btn btn--ghost btn--sm" id="popupClose" type="button">关闭</button>
+        </div>
+        <div class="fin-popup__search">
+          <input type="text" class="form-input" id="popupSearch" placeholder="搜索">
+        </div>
+        <div class="fin-popup__body" id="popupBody"></div>
+        <div class="fin-popup__actions">
+          <button class="btn btn--outline btn--block" id="popupReset" type="button">全选/清空</button>
+          <button class="btn btn--primary btn--block" id="popupConfirm" type="button">确认</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+  <script src="../assets/js/mock/operations.js?v=26"></script>
+  <script src="../assets/js/utils.js?v=26"></script>
+  <script src="../assets/js/components/header.js?v=26"></script>
+  <script>
+    const role = (Utils.getUrlParam('role') || 'finance').trim();
+    Header.render('#header', {
+      title: '数据看板',
+      showBack: true,
+      backHref: `ops-board.html?role=${encodeURIComponent(role)}&ops=all&sub=dashboard`
+    });
+
+    let rangeType = (Utils.getUrlParam('rangeType') || 'year').trim();
+    if (!['year', 'custom'].includes(rangeType)) rangeType = 'year';
+    let selectedYear = (Utils.getUrlParam('year') || '2026').trim();
+    let customFrom = (Utils.getUrlParam('fromMonth') || '').trim();
+    let customTo = (Utils.getUrlParam('toMonth') || '').trim();
+
+    let selectedProvinces = [];
+    let trendExpanded = false;
+    let selectedDetailMonths = [];
+    let latestMonthsInRange = [];
+    let fixedProvinces = [];
+    let compareMetric = 'avgRevenue';
+
+    const KPI_METRICS = [
+      { key: 'settlementAmount', label: '结算金额', isMoney: true },
+      { key: 'settledNights', label: '结算间夜', isMoney: false },
+      { key: 'occupancyRate', label: '入住率', isPercent: true },
+      { key: 'avgRevenue', label: '平均单间收益', isMoney: true }
+    ];
+
+    const trendCharts = new Map();
+
+    function shiftMonth(monthKey, step) {
+      const safe = /^\d{4}-\d{2}$/.test(monthKey) ? monthKey : new Date().toISOString().slice(0, 7);
+      const [y, m] = safe.split('-').map(Number);
+      const date = new Date(y, m - 1 + step, 1);
+      const yy = date.getFullYear();
+      const mm = String(date.getMonth() + 1).padStart(2, '0');
+      return `${yy}-${mm}`;
+    }
+
+    function compareMonth(a, b) {
+      return String(a || '').localeCompare(String(b || ''));
+    }
+
+    function monthsBetween(a, b) {
+      if (!/^\d{4}-\d{2}$/.test(a) || !/^\d{4}-\d{2}$/.test(b)) return 0;
+      const [ya, ma] = a.split('-').map(Number);
+      const [yb, mb] = b.split('-').map(Number);
+      return (yb - ya) * 12 + (mb - ma);
+    }
+
+    function listMonthsInRange(range) {
+      if (!range) return [];
+      const out = [];
+      let cur = range.start;
+      while (compareMonth(cur, range.end) <= 0) {
+        out.push(cur);
+        cur = shiftMonth(cur, 1);
+      }
+      return out;
+    }
+
+    function inMonthRange(monthKey, range) {
+      if (!range) return false;
+      return compareMonth(monthKey, range.start) >= 0 && compareMonth(monthKey, range.end) <= 0;
+    }
+
+    function getCurrentRange() {
+      if (rangeType === 'year') return { start: `${selectedYear}-01`, end: `${selectedYear}-12` };
+      if (!customFrom || !customTo) return null;
+      if (compareMonth(customFrom, customTo) > 0) return null;
+      return { start: customFrom, end: customTo };
+    }
+
+    function getPreviousRange() {
+      const cur = getCurrentRange();
+      if (!cur) return null;
+      if (rangeType === 'year') {
+        const py = String((Number(selectedYear) || new Date().getFullYear()) - 1);
+        return { start: `${py}-01`, end: `${py}-12` };
+      }
+      const span = monthsBetween(cur.start, cur.end) + 1;
+      const prevEnd = shiftMonth(cur.start, -1);
+      const prevStart = shiftMonth(prevEnd, -(span - 1));
+      return { start: prevStart, end: prevEnd };
+    }
+
+    function formatRangeLabel(range) {
+      if (!range) return '';
+      if (range.start === range.end) return range.start;
+      return `${range.start} ~ ${range.end}`;
+    }
+
+    function formatNumber(num) {
+      return Math.round(Number(num) || 0).toLocaleString('zh-CN');
+    }
+
+    function formatMoney(num) {
+      return `¥${formatNumber(num)}`;
+    }
+
+    function formatPercent1(num) {
+      const n = Number(num) || 0;
+      return `${(n * 100).toFixed(1)}%`;
+    }
+
+    function formatMetric(metric, value) {
+      if (!metric) return '-';
+      if (metric.isPercent) return formatPercent1(value);
+      if (metric.isMoney) return formatMoney(value);
+      return formatNumber(value);
+    }
+
+    function calcDeltaDisplay(curr, prev, hasPrev) {
+      if (!hasPrev || prev === null || prev === undefined) {
+        return { text: '/', trend: 'flat', rate: null };
+      }
+      if (prev === 0 && curr > 0) {
+        return { text: '新增', trend: 'up', rate: null };
+      }
+      if (prev === 0 && curr === 0) {
+        return { text: '持平', trend: 'flat', rate: 0 };
+      }
+      const rate = (curr - prev) / prev;
+      if (rate === 0) return { text: '持平', trend: 'flat', rate };
+      const arrow = rate > 0 ? '↑' : '↓';
+      return { text: `${arrow}${Math.abs(rate * 100).toFixed(1)}%`, trend: rate > 0 ? 'up' : 'down', rate };
+    }
+
+    function aggregate(records, hotelMap) {
+      let settledNights = 0;
+      let settlementAmount = 0;
+      let capacity = 0;
+      const involvedHotelIds = new Set();
+      records.forEach((r) => {
+        const h = hotelMap[r.hotelId];
+        if (!h) return;
+        const days = Utils.getEffectiveDaysInMonth(h.launchDate, r.monthKey);
+        const rooms = Number(h.cooperationRooms) || 0;
+        settledNights += Number(r.settledNights) || 0;
+        settlementAmount += Number(r.settlementAmount) || 0;
+        capacity += rooms * days;
+        involvedHotelIds.add(String(r.hotelId));
+      });
+      let totalRooms = 0;
+      involvedHotelIds.forEach((id) => {
+        const h = hotelMap[id];
+        if (h) totalRooms += Number(h.cooperationRooms) || 0;
+      });
+      return {
+        settlementAmount,
+        settledNights,
+        occupancyRate: capacity ? settledNights / capacity : 0,
+        avgRevenue: totalRooms ? settlementAmount / totalRooms : 0,
+        capacity,
+        totalRooms,
+        hotelCount: involvedHotelIds.size
+      };
+    }
+
+    function renderTimeBar() {
+      document.querySelectorAll('#rangeTabs .ops-time-tab').forEach((btn) => {
+        btn.classList.toggle('ops-time-tab--active', btn.dataset.range === rangeType);
+      });
+      document.getElementById('yearRow').style.display = rangeType === 'year' ? 'flex' : 'none';
+      document.getElementById('customMonthRow').style.display = rangeType === 'custom' ? 'flex' : 'none';
+      document.getElementById('yearLabel').textContent = `${selectedYear}年`;
+      document.getElementById('customFrom').value = customFrom;
+      document.getElementById('customTo').value = customTo;
+    }
+
+    function renderFilterButtons(filteredHotels, allProvinces) {
+      const provEl = document.getElementById('provinceLabel');
+      if (selectedProvinces.length === 0 || selectedProvinces.length === allProvinces.length) {
+        provEl.textContent = `省份（all）(${allProvinces.length})`;
+      } else {
+        provEl.textContent = `省份（${selectedProvinces.length}）`;
+      }
+    }
+
+    function renderKpi(currAgg, prevAgg, cur, prev) {
+      const grid = document.getElementById('kpiGrid');
+      const desc = document.getElementById('kpiDesc');
+      desc.textContent = `当前 ${formatRangeLabel(cur)}`;
+      grid.innerHTML = KPI_METRICS.map((m) => {
+        const currVal = currAgg[m.key];
+        return `
+          <div class="fin-kpi-card">
+            <div class="fin-kpi-card__label">${m.label}</div>
+            <div class="fin-kpi-card__value">${formatMetric(m, currVal)}</div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    /**
+     * 构造 月 × 省份 矩阵
+     * monthlyProvince[month][province] = { rooms, revenue, nights, hotelSet, avg }
+     */
+    function buildMonthlyProvinceMatrix(months, hotels, records, hotelMap) {
+      const matrix = {};
+      const provinceSet = new Set(
+        hotels
+          .map((h) => h.province)
+          .filter((p) => fixedProvinces.includes(p))
+      );
+
+      months.forEach((m) => {
+        matrix[m] = {};
+        provinceSet.forEach((p) => {
+          matrix[m][p] = { rooms: 0, revenue: 0, nights: 0, hotelSet: new Set(), avg: 0 };
+        });
+      });
+
+      records.forEach((r) => {
+        const h = hotelMap[r.hotelId];
+        if (!h || !h.province) return;
+        const bucket = matrix[r.monthKey] && matrix[r.monthKey][h.province];
+        if (!bucket) return;
+        bucket.revenue += Number(r.settlementAmount) || 0;
+        bucket.nights += Number(r.settledNights) || 0;
+        bucket.hotelSet.add(String(h.id));
+      });
+
+      months.forEach((m) => {
+        Object.keys(matrix[m]).forEach((p) => {
+          const cell = matrix[m][p];
+          let rooms = 0;
+          cell.hotelSet.forEach((id) => {
+            const h = hotelMap[id];
+            if (h) rooms += Number(h.cooperationRooms) || 0;
+          });
+          cell.rooms = rooms;
+          cell.avg = rooms ? cell.revenue / rooms : 0;
+        });
+      });
+
+      return { matrix, provinces: [...provinceSet].sort() };
+    }
+
+    function getSortedProvinces(provincesAll, monthsAsc, matrix) {
+      const totalRevenue = {};
+      provincesAll.forEach((p) => {
+        totalRevenue[p] = monthsAsc.reduce((sum, m) => sum + (matrix[m] && matrix[m][p] ? matrix[m][p].revenue : 0), 0);
+      });
+      return provincesAll.slice().sort((a, b) => (totalRevenue[b] || 0) - (totalRevenue[a] || 0));
+    }
+
+    function renderCompareTable(months, provincesAll, matrix) {
+      const table = document.getElementById('compareTable');
+      const desc = document.getElementById('compareDesc');
+      const compareTitle = document.getElementById('compareTitle');
+
+      const monthsAsc = months.slice().sort((a, b) => a.localeCompare(b));
+      const provinces = getSortedProvinces(provincesAll, monthsAsc, matrix);
+      const metricLabel = compareMetric === 'revenue' ? '总收益' : '单间收益';
+      compareTitle.textContent = `${metricLabel} · 跨月对比`;
+      desc.textContent = `仅展示 5 个省份（与省份筛选一致）`;
+
+      if (!provinces.length || !monthsAsc.length) {
+        table.innerHTML = '<tbody><tr><td class="fin-compare-empty">暂无数据</td></tr></tbody>';
+        return;
+      }
+
+      const header = `
+        <thead>
+          <tr>
+            <th rowspan="2" class="fin-compare-th-province">省份</th>
+            ${monthsAsc.map((m, idx) => `<th colspan="2" class="fin-compare-th-prov ${idx % 2 ? 'is-alt' : ''}">${m}</th>`).join('')}
+          </tr>
+          <tr>
+            ${monthsAsc.map((_, idx) => `<th class="fin-compare-th-sub ${idx % 2 ? 'is-alt' : ''} is-month-start">${metricLabel}</th><th class="fin-compare-th-sub ${idx % 2 ? 'is-alt' : ''}">环比</th>`).join('')}
+          </tr>
+        </thead>
+      `;
+
+      const body = provinces.map((p) => {
+        const cells = monthsAsc.map((m, idx) => {
+          const prevMonth = shiftMonth(m, -1);
+          const curBucket = matrix[m] && matrix[m][p] ? matrix[m][p] : null;
+          const cur = curBucket ? (compareMetric === 'revenue' ? curBucket.revenue : curBucket.avg) : 0;
+          const hasPrev = !!(matrix[prevMonth] && matrix[prevMonth][p]);
+          const prev = hasPrev
+            ? (compareMetric === 'revenue' ? matrix[prevMonth][p].revenue : matrix[prevMonth][p].avg)
+            : null;
+          const delta = calcDeltaDisplay(cur, prev, hasPrev);
+          const cls = delta.trend === 'up' ? 'is-up' : (delta.trend === 'down' ? 'is-down' : 'is-flat');
+          const valueText = compareMetric === 'revenue' ? formatMoney(cur) : formatMoney(cur);
+          return `<td class="fin-compare-td-value ${idx % 2 ? 'is-alt' : ''} is-month-start">${valueText}</td><td class="fin-compare-td-delta ${idx % 2 ? 'is-alt' : ''} ${cls}">${delta.text}</td>`;
+        }).join('');
+        return `<tr><td class="fin-compare-td-province" title="${p}">${p}</td>${cells}</tr>`;
+      }).join('');
+
+      table.innerHTML = header + `<tbody>${body}</tbody>`;
+    }
+
+    function renderTrendCharts(months, provincesAll, matrix) {
+      const root = document.getElementById('trendList');
+      const desc = document.getElementById('trendDesc');
+
+      const monthsAsc = months.slice().sort((a, b) => a.localeCompare(b));
+      const provincesSorted = getSortedProvinces(provincesAll, monthsAsc, matrix);
+      const totalRevenue = {};
+      provincesSorted.forEach((p) => {
+        totalRevenue[p] = monthsAsc.reduce((sum, m) => sum + (matrix[m] && matrix[m][p] ? matrix[m][p].revenue : 0), 0);
+      });
+      const provinces = trendExpanded ? provincesSorted : provincesSorted.slice(0, 5);
+
+      desc.textContent = provinces.length
+        ? `每省一张折线，默认 Top 5，支持查看全部`
+        : '暂无可用省份数据';
+      document.getElementById('trendToggleBtn').style.display = provincesSorted.length > 5 ? '' : 'none';
+      document.getElementById('trendToggleBtn').textContent = trendExpanded ? '收起' : '查看全部';
+
+      trendCharts.forEach((inst) => { try { inst.dispose(); } catch (e) {} });
+      trendCharts.clear();
+
+      if (!provinces.length || monthsAsc.length < 1) {
+        root.innerHTML = '<div class="fin-empty-hint">暂无走势数据</div>';
+        return;
+      }
+
+      root.innerHTML = provinces.map((p, idx) => `
+        <div class="fin-trend-item">
+          <div class="fin-trend-item__head">
+            <div class="fin-trend-item__name">${p} · 单间收益&环比增长率</div>
+            <div class="fin-trend-item__total">区间累计 ${formatMoney(totalRevenue[p] || 0)}</div>
+          </div>
+          <div class="fin-trend-item__chart" id="trendChart_${idx}"></div>
+        </div>
+      `).join('');
+
+      provinces.forEach((p, idx) => {
+        const el = document.getElementById(`trendChart_${idx}`);
+        if (!el) return;
+        const inst = echarts.init(el);
+        const dataValue = monthsAsc.map((m) => {
+          const cell = matrix[m] && matrix[m][p];
+          return cell ? Math.round(cell.avg) : 0;
+        });
+        const dataDelta = monthsAsc.map((m) => {
+          const prevMonth = shiftMonth(m, -1);
+          const cur = matrix[m] && matrix[m][p] ? matrix[m][p].avg : 0;
+          const hasPrev = !!(matrix[prevMonth] && matrix[prevMonth][p]);
+          const prev = hasPrev ? matrix[prevMonth][p].avg : null;
+          return calcDeltaDisplay(cur, prev, hasPrev);
+        });
+        inst.setOption({
+          grid: { left: 44, right: 16, top: 32, bottom: 28 },
+          tooltip: {
+            trigger: 'axis',
+            formatter: (params) => {
+              const p0 = params[0];
+              const idx2 = p0.dataIndex;
+              const month = monthsAsc[idx2];
+              return `${month}<br/>单间收益：¥${formatNumber(p0.value)}<br/>环比：${dataDelta[idx2].text}`;
+            }
+          },
+          xAxis: {
+            type: 'category',
+            data: monthsAsc,
+            axisLine: { lineStyle: { color: '#cbd1de' } },
+            axisLabel: {
+              color: '#6b7280',
+              fontSize: 11,
+              formatter: (v) => String(v).slice(5)
+            }
+          },
+          yAxis: {
+            type: 'value',
+            axisLine: { show: false },
+            axisTick: { show: false },
+            splitLine: { lineStyle: { color: '#f0f2f7' } },
+            axisLabel: { color: '#9ca3af', fontSize: 10, formatter: (v) => v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v }
+          },
+          series: [{
+            name: '单间收益',
+            type: 'line',
+            data: dataValue,
+            smooth: true,
+            symbol: 'circle',
+            symbolSize: 8,
+            lineStyle: { width: 2, color: '#1D6FE6' },
+            itemStyle: { color: '#1D6FE6' },
+            areaStyle: {
+              color: {
+                type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+                colorStops: [
+                  { offset: 0, color: 'rgba(29, 111, 230, 0.22)' },
+                  { offset: 1, color: 'rgba(29, 111, 230, 0)' }
+                ]
+              }
+            },
+            label: {
+              show: true,
+              position: 'top',
+              fontSize: 10,
+              color: '#1f2a44',
+              formatter: (params) => {
+                const delta = dataDelta[params.dataIndex] || { text: '/' };
+                return `${delta.text}, ${formatNumber(params.value)}`;
+              }
+            }
+          }]
+        });
+        trendCharts.set(idx, inst);
+      });
+    }
+
+    function normalizeDetailMonthSelection(monthsDesc) {
+      latestMonthsInRange = monthsDesc.slice();
+      const validSet = new Set(monthsDesc);
+      selectedDetailMonths = selectedDetailMonths.filter((m) => validSet.has(m));
+      if (!selectedDetailMonths.length && monthsDesc.length) selectedDetailMonths = monthsDesc.slice();
+      const label = document.getElementById('detailMonthLabel');
+      label.textContent = monthsDesc.length
+        ? `月份（${selectedDetailMonths.length}/${monthsDesc.length}）`
+        : '月份（all）';
+    }
+
+    function renderMonthDetailList(months, provincesAll, matrix) {
+      const root = document.getElementById('monthDetailList');
+      const desc = document.getElementById('detailDesc');
+      const monthsDesc = months.slice().sort((a, b) => b.localeCompare(a));
+      normalizeDetailMonthSelection(monthsDesc);
+      const selectedSet = new Set(selectedDetailMonths);
+      desc.textContent = `${monthsDesc.length} 个月，每月展示省份维度的房间数/间夜/收入/占比`;
+
+      if (!monthsDesc.length || !provincesAll.length) {
+        root.innerHTML = '<div class="fin-empty-hint">暂无明细数据</div>';
+        return;
+      }
+
+      root.innerHTML = monthsDesc.filter((m) => selectedSet.has(m)).map((m) => {
+        const perMonth = matrix[m] || {};
+        let totalRooms = 0, totalRevenue = 0, totalNights = 0;
+        provincesAll.forEach((p) => {
+          const c = perMonth[p] || { rooms: 0, revenue: 0, nights: 0 };
+          totalRooms += c.rooms;
+          totalRevenue += c.revenue;
+          totalNights += c.nights;
+        });
+        const rows = provincesAll.map((p) => {
+          const c = perMonth[p] || { rooms: 0, revenue: 0, nights: 0, avg: 0 };
+          const roomPct = totalRooms ? c.rooms / totalRooms : 0;
+          const revenuePct = totalRevenue ? c.revenue / totalRevenue : 0;
+          const nightsPct = totalNights ? c.nights / totalNights : 0;
+          return `
+            <tr>
+              <td class="fin-detail-td-name">${p}</td>
+              <td>${c.rooms}</td>
+              <td class="fin-detail-td-pct">${formatPercent1(roomPct)}</td>
+              <td>${formatMoney(c.revenue)}</td>
+              <td class="fin-detail-td-pct">${formatPercent1(revenuePct)}</td>
+              <td>${c.nights}</td>
+              <td class="fin-detail-td-pct">${formatPercent1(nightsPct)}</td>
+              <td class="fin-detail-td-strong">${formatMoney(c.avg)}</td>
+            </tr>
+          `;
+        }).join('');
+        return `
+          <div class="fin-detail-month">
+            <div class="fin-detail-month__title">${m}</div>
+            <div class="fin-detail-wrap">
+              <table class="fin-detail-table">
+                <thead>
+                  <tr>
+                    <th>省份</th>
+                    <th>房间</th>
+                    <th>占比</th>
+                    <th>总收入</th>
+                    <th>占比</th>
+                    <th>间夜</th>
+                    <th>占比</th>
+                    <th>单间收益</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${rows}
+                  <tr class="fin-detail-total-row">
+                    <td class="fin-detail-td-name">合计</td>
+                    <td>${totalRooms}</td>
+                    <td class="fin-detail-td-pct">100%</td>
+                    <td>${formatMoney(totalRevenue)}</td>
+                    <td class="fin-detail-td-pct">100%</td>
+                    <td>${totalNights}</td>
+                    <td class="fin-detail-td-pct">100%</td>
+                    <td class="fin-detail-td-strong">${formatMoney(totalRooms ? totalRevenue / totalRooms : 0)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        `;
+      }).join('');
+      if (!root.innerHTML) {
+        root.innerHTML = '<div class="fin-empty-hint">当前月份筛选下暂无明细数据</div>';
+      }
+    }
+
+    let popupCtx = null;
+
+    function openPopup(type) {
+      const hotels = Utils.getFinanceHotels();
+      let items = [];
+      let selected = [];
+      if (type === 'province') {
+        const provinces = fixedProvinces.slice();
+        items = provinces.map((p) => ({ key: p, label: p, count: hotels.filter((h) => h.province === p).length }));
+        selected = selectedProvinces.slice();
+      } else {
+        items = latestMonthsInRange.map((m) => ({ key: m, label: m }));
+        selected = selectedDetailMonths.slice();
+      }
+      popupCtx = { type, items, selected: new Set(selected), keyword: '' };
+      document.getElementById('popupTitle').textContent = type === 'province' ? '选择省份' : '选择月份';
+      document.getElementById('popupSearch').value = '';
+      document.getElementById('popupSearch').placeholder = type === 'detailMonth' ? '搜索月份，如 2026-03' : '搜索';
+      document.getElementById('popup').style.display = '';
+      renderPopupBody();
+    }
+
+    function closePopup() {
+      document.getElementById('popup').style.display = 'none';
+      popupCtx = null;
+    }
+
+    function renderPopupBody() {
+      if (!popupCtx) return;
+      const body = document.getElementById('popupBody');
+      const kw = (popupCtx.keyword || '').toLowerCase();
+      const list = popupCtx.items.filter((it) => !kw || it.label.toLowerCase().includes(kw));
+      const selected = popupCtx.selected;
+      body.innerHTML = list.length ? list.map((it) => `
+        <label class="fin-check-item">
+          <input type="checkbox" data-key="${it.key}" ${selected.has(it.key) ? 'checked' : ''}>
+          <span class="fin-check-item__label">${it.label}${it.count !== undefined ? `（${it.count}）` : ''}</span>
+          ${it.sub ? `<span class="fin-check-item__sub">${it.sub}</span>` : ''}
+        </label>
+      `).join('') : '<div class="fin-empty-hint">无匹配结果</div>';
+    }
+
+    function applyPopupSelection() {
+      if (!popupCtx) return;
+      const selected = [...popupCtx.selected];
+      if (popupCtx.type === 'province') {
+        selectedProvinces = selected;
+      } else {
+        selectedDetailMonths = selected;
+      }
+      closePopup();
+      render();
+    }
+
+    function render() {
+      renderTimeBar();
+      const range = getCurrentRange();
+      const prevRange = getPreviousRange();
+
+      const hotels = Utils.getFinanceHotels();
+      const records = Utils.getFinanceReconcileRecords();
+      const hotelMap = {};
+      hotels.forEach((h) => { hotelMap[String(h.id)] = h; });
+
+      fixedProvinces = [...new Set(hotels.map((h) => h.province).filter(Boolean))].slice(0, 5);
+      if (!selectedProvinces.length) selectedProvinces = fixedProvinces.slice();
+      selectedProvinces = selectedProvinces.filter((p) => fixedProvinces.includes(p));
+      if (!selectedProvinces.length) selectedProvinces = fixedProvinces.slice();
+
+      const scopedHotels = hotels.filter((h) => fixedProvinces.includes(h.province));
+      const filteredHotels = scopedHotels.filter((h) => selectedProvinces.includes(h.province));
+
+      renderFilterButtons(filteredHotels, fixedProvinces);
+
+      document.getElementById('summaryText').textContent = range
+        ? `区间 ${formatRangeLabel(range)}，共 ${filteredHotels.length} 家酒店`
+        : '请选择有效的自定义月份区间';
+
+      const contentRoot = document.getElementById('contentRoot');
+      const emptyRoot = document.getElementById('emptyRoot');
+      if (!range) {
+        contentRoot.style.display = 'none';
+        emptyRoot.style.display = '';
+        document.getElementById('emptyText').textContent = '自定义区间无效，请重新选择';
+        return;
+      }
+      if (!filteredHotels.length) {
+        contentRoot.style.display = 'none';
+        emptyRoot.style.display = '';
+        document.getElementById('emptyText').textContent = '暂无符合条件的酒店';
+        return;
+      }
+      contentRoot.style.display = '';
+      emptyRoot.style.display = 'none';
+
+      const hotelIdSet = new Set(filteredHotels.map((h) => String(h.id)));
+      const currRecords = records.filter((r) => hotelIdSet.has(String(r.hotelId)) && inMonthRange(r.monthKey, range));
+      const prevRecords = prevRange ? records.filter((r) => hotelIdSet.has(String(r.hotelId)) && inMonthRange(r.monthKey, prevRange)) : [];
+
+      const currAgg = aggregate(currRecords, hotelMap);
+      const prevAgg = prevRange ? aggregate(prevRecords, hotelMap) : null;
+
+      renderKpi(currAgg, prevAgg, range, prevRange);
+
+      const months = listMonthsInRange(range);
+      const extendedMonths = [shiftMonth(range.start, -1), ...months];
+      const extendedRecords = records.filter((r) => hotelIdSet.has(String(r.hotelId)) && extendedMonths.includes(r.monthKey));
+      const { matrix, provinces } = buildMonthlyProvinceMatrix(extendedMonths, filteredHotels, extendedRecords, hotelMap);
+
+      renderCompareTable(months, provinces, matrix);
+      renderTrendCharts(months, provinces, matrix);
+      renderMonthDetailList(months, provinces, matrix);
+    }
+
+    document.getElementById('rangeTabs').addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-range]');
+      if (!btn) return;
+      rangeType = btn.dataset.range;
+      render();
+    });
+    document.getElementById('yearPrevBtn').addEventListener('click', () => { selectedYear = String((Number(selectedYear) || new Date().getFullYear()) - 1); render(); });
+    document.getElementById('yearNextBtn').addEventListener('click', () => { selectedYear = String((Number(selectedYear) || new Date().getFullYear()) + 1); render(); });
+    document.getElementById('customFrom').addEventListener('change', (e) => { customFrom = e.target.value; render(); });
+    document.getElementById('customTo').addEventListener('change', (e) => { customTo = e.target.value; render(); });
+
+    document.getElementById('provinceBtn').addEventListener('click', () => openPopup('province'));
+    document.getElementById('detailMonthBtn').addEventListener('click', () => openPopup('detailMonth'));
+    document.getElementById('popupMask').addEventListener('click', closePopup);
+    document.getElementById('popupClose').addEventListener('click', closePopup);
+    document.getElementById('popupConfirm').addEventListener('click', applyPopupSelection);
+    document.getElementById('popupReset').addEventListener('click', () => {
+      if (!popupCtx) return;
+      const allSelected = popupCtx.selected.size === popupCtx.items.length;
+      popupCtx.selected = new Set(allSelected ? [] : popupCtx.items.map((it) => it.key));
+      renderPopupBody();
+    });
+    document.getElementById('popupSearch').addEventListener('input', (e) => {
+      if (!popupCtx) return;
+      popupCtx.keyword = e.target.value.trim();
+      renderPopupBody();
+    });
+    document.getElementById('popupBody').addEventListener('change', (e) => {
+      const el = e.target.closest('input[type="checkbox"]');
+      if (!el || !popupCtx) return;
+      const key = el.dataset.key;
+      if (el.checked) popupCtx.selected.add(key); else popupCtx.selected.delete(key);
+    });
+
+    document.getElementById('trendToggleBtn').addEventListener('click', () => {
+      trendExpanded = !trendExpanded;
+      render();
+    });
+    document.getElementById('compareMetricTabs').addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-metric]');
+      if (!btn) return;
+      compareMetric = btn.dataset.metric || 'avgRevenue';
+      document.querySelectorAll('#compareMetricTabs .fin-tab').forEach((b) => {
+        b.classList.toggle('fin-tab--active', b.dataset.metric === compareMetric);
+      });
+      render();
+    });
+
+    window.addEventListener('resize', () => {
+      trendCharts.forEach((inst) => { try { inst.resize(); } catch (e) {} });
+    });
+
+    render();
+  </script>
+</body>
+</html>

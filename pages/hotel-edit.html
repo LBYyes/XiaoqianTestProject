@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>酒店信息 - 奇趣庄园</title>
+  <link rel="stylesheet" href="../assets/css/theme.css?v=3">
+  <link rel="stylesheet" href="../assets/css/common.css?v=3">
+  <link rel="stylesheet" href="../assets/css/pages/hotel-edit.css?v=3">
+</head>
+<body>
+  <div class="app-wrapper">
+    <div id="header"></div>
+    <main class="page-content page-content--with-header" style="padding-bottom:calc(var(--tabbar-height) + var(--safe-bottom) + 72px);">
+
+      <div class="edit-section">
+        <div class="edit-section__title">基础信息</div>
+        <div class="form-group">
+          <label class="form-label form-label--required">酒店名称</label>
+          <input class="form-input" id="name" placeholder="请输入酒店名称">
+        </div>
+        <div class="form-group">
+          <label class="form-label form-label--required">酒店地址</label>
+          <input class="form-input" id="address" placeholder="请输入酒店地址">
+          <div class="city-tier-badge" id="cityTierBadge" style="display:none;">
+            <span>🤖 自动识别</span><span id="cityTierText"></span>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">业主方</label>
+          <input class="form-input" id="owner" placeholder="请输入业主方名称">
+        </div>
+        <div class="form-group">
+          <label class="form-label">品牌方</label>
+          <input class="form-input" id="brand" placeholder="请输入品牌方名称">
+        </div>
+        <div class="form-group">
+          <label class="form-label">总房数</label>
+          <input class="form-input" id="totalRooms" type="number" placeholder="请输入总房间数">
+        </div>
+        <div class="form-group">
+          <label class="form-label">亲子房数</label>
+          <input class="form-input" id="kidsRooms" type="number" placeholder="请输入亲子房间数">
+        </div>
+        <div class="form-group">
+          <label class="form-label">携程链接</label>
+          <input class="form-input" id="ctripLink" placeholder="请粘贴携程酒店链接">
+        </div>
+      </div>
+
+      <div class="edit-section">
+        <div class="edit-section__title">酒店画像</div>
+        <div class="form-group">
+          <label class="form-label">旺季均价（元）</label>
+          <input class="form-input" id="peakPrice" type="number" placeholder="请输入旺季均价">
+        </div>
+        <div class="form-group">
+          <label class="form-label">淡季均价（元）</label>
+          <input class="form-input" id="offPrice" type="number" placeholder="请输入淡季均价">
+        </div>
+        <div class="form-group">
+          <label class="form-label">周边景点 & 客流来源</label>
+          <textarea class="form-textarea" id="scenicSpots" placeholder="请输入周边景点和客流来源"></textarea>
+        </div>
+      </div>
+
+      <div class="edit-section">
+        <div class="edit-section__title">
+          联系人
+          <span class="btn btn--sm btn--ghost" id="addContactBtn">+ 添加联系人</span>
+        </div>
+        <div id="contactsContainer"></div>
+      </div>
+
+    </main>
+
+    <div class="edit-footer edit-footer--above-tabbar">
+      <div class="btn btn--primary btn--block btn--lg" id="saveBtn">保存</div>
+    </div>
+    <div id="tabbar"></div>
+  </div>
+
+  <script src="../assets/js/mock/hotels.js?v=5"></script>
+  <script src="../assets/js/utils.js?v=4"></script>
+  <script src="../assets/js/components/header.js?v=4"></script>
+  <script src="../assets/js/components/tabbar.js?v=4"></script>
+  <script>
+    const editId = Utils.getUrlParam('id');
+    const isEdit = !!editId;
+    let hotel = isEdit ? Utils.getHotelById(editId) : null;
+    let contacts = hotel ? [...hotel.contacts] : [{ name: '', position: '', phone: '', email: '' }];
+
+    const backUrl = isEdit ? `hotel-detail.html?id=${editId}` : 'hotel-list.html';
+    Header.render('#header', { title: isEdit ? '编辑酒店' : '新建酒店', showBack: true, backHref: backUrl });
+    TabBar.render('#tabbar', { active: 'list' });
+
+    if (hotel) {
+      document.getElementById('name').value = hotel.name || '';
+      document.getElementById('address').value = hotel.address || '';
+      document.getElementById('owner').value = hotel.owner || '';
+      document.getElementById('brand').value = hotel.brand || '';
+      document.getElementById('totalRooms').value = hotel.totalRooms || '';
+      document.getElementById('kidsRooms').value = hotel.kidsRooms || '';
+      document.getElementById('ctripLink').value = hotel.ctripLink || '';
+      document.getElementById('peakPrice').value = hotel.peakPrice || '';
+      document.getElementById('offPrice').value = hotel.offPrice || '';
+      document.getElementById('scenicSpots').value = hotel.scenicSpots || '';
+    }
+
+    const renderContacts = () => {
+      document.getElementById('contactsContainer').innerHTML = contacts.map((c, i) => `
+        <div class="contact-block">
+          ${contacts.length > 1 ? `<div class="contact-block__remove" onclick="removeContact(${i})">×</div>` : ''}
+          <div class="form-group">
+            <label class="form-label">姓名</label>
+            <input class="form-input contact-field" data-idx="${i}" data-field="name" value="${c.name}" placeholder="请输入姓名">
+          </div>
+          <div class="form-group">
+            <label class="form-label">岗位</label>
+            <input class="form-input contact-field" data-idx="${i}" data-field="position" value="${c.position}" placeholder="请输入岗位">
+          </div>
+          <div class="form-group">
+            <label class="form-label">手机号</label>
+            <input class="form-input contact-field" data-idx="${i}" data-field="phone" value="${c.phone}" placeholder="请输入手机号">
+          </div>
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label">邮箱</label>
+            <input class="form-input contact-field" data-idx="${i}" data-field="email" value="${c.email}" placeholder="请输入邮箱">
+          </div>
+        </div>
+      `).join('');
+
+      document.querySelectorAll('.contact-field').forEach(input => {
+        input.addEventListener('input', (e) => {
+          const idx = Number(e.target.dataset.idx);
+          contacts[idx][e.target.dataset.field] = e.target.value;
+        });
+      });
+    };
+
+    window.removeContact = (idx) => {
+      contacts.splice(idx, 1);
+      renderContacts();
+    };
+
+    document.getElementById('addContactBtn').addEventListener('click', () => {
+      contacts.push({ name: '', position: '', phone: '', email: '' });
+      renderContacts();
+    });
+
+    document.getElementById('address').addEventListener('input', (e) => {
+      const tier = Utils.detectCityTier(e.target.value);
+      const badge = document.getElementById('cityTierBadge');
+      if (tier !== '未知') {
+        document.getElementById('cityTierText').textContent = tier + '城市';
+        badge.style.display = 'inline-flex';
+      } else {
+        badge.style.display = 'none';
+      }
+    });
+
+    if (hotel && hotel.address) {
+      document.getElementById('address').dispatchEvent(new Event('input'));
+    }
+
+    document.getElementById('saveBtn').addEventListener('click', () => {
+      const name = document.getElementById('name').value.trim();
+      if (!name) { alert('请输入酒店名称'); return; }
+      const address = document.getElementById('address').value.trim();
+      if (!address) { alert('请输入酒店地址'); return; }
+
+      const stageData = hotel ? hotel.stageData : { checkin: { completed: false } };
+      // 保存酒店信息即视为完成建档
+      if (!stageData.checkin || stageData.checkin.completed === false) {
+        stageData.checkin = { completed: true };
+      }
+
+      const data = {
+        id: hotel ? hotel.id : 0,
+        name,
+        address,
+        cityTier: Utils.detectCityTier(address),
+        owner: document.getElementById('owner').value.trim(),
+        brand: document.getElementById('brand').value.trim(),
+        totalRooms: Number(document.getElementById('totalRooms').value) || 0,
+        kidsRooms: Number(document.getElementById('kidsRooms').value) || 0,
+        ctripLink: document.getElementById('ctripLink').value.trim(),
+        peakPrice: Number(document.getElementById('peakPrice').value) || 0,
+        offPrice: Number(document.getElementById('offPrice').value) || 0,
+        scenicSpots: document.getElementById('scenicSpots').value.trim(),
+        contacts: contacts.filter(c => c.name),
+        signedAt: hotel ? hotel.signedAt : null,
+        stage: hotel ? hotel.stage : 'visit',
+        stageData
+      };
+
+      const saved = Utils.saveHotel(data);
+      window.location.href = `hotel-detail.html?id=${saved.id}`;
+    });
+
+    renderContacts();
+  </script>
+</body>
+</html>

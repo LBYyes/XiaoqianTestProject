@@ -1,0 +1,1409 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>OTA巡检 - 奇趣XR酒店管理平台</title>
+  <link rel="stylesheet" href="../assets/css/theme.css?v=20">
+  <link rel="stylesheet" href="../assets/css/common.css?v=20">
+  <link rel="stylesheet" href="../assets/css/pages/ops.css?v=65">
+</head>
+<body>
+  <div class="app-wrapper">
+    <div id="header"></div>
+    <main class="page-content page-content--with-header">
+      <div class="ops-filter-row" id="topScopeFilters"></div>
+      <div class="ops-overview-inline" id="overviewInline"></div>
+      <div class="ops-list-toolbar">
+        <div class="ops-view-toggle" id="viewToggle" style="display:none;">
+          <button type="button" class="ops-view-toggle__btn" data-view="simple">简易</button>
+          <button type="button" class="ops-view-toggle__btn ops-view-toggle__btn--active" data-view="card">卡片</button>
+        </div>
+        <button type="button" class="ops-multi-btn ops-list-toolbar__select" id="abnormalFilterBtn">
+          <span class="ops-multi-btn__label" id="abnormalFilterLabel">异常（all）</span>
+          <span class="ops-multi-btn__arrow">▼</span>
+        </button>
+        <select class="form-select form-select--sm ops-list-toolbar__select" id="sortFilter">
+          <option value="latest_desc">最近巡检倒序</option>
+          <option value="duration_desc">异常时间倒序</option>
+        </select>
+        <div class="search-bar ops-list-toolbar__search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+          <input id="hotelSearch" type="text" placeholder="搜索酒店名称">
+        </div>
+        <div class="ops-summary" id="summaryText"></div>
+        <button type="button" class="btn btn--outline btn--sm ops-list-toolbar__collapse-all" id="cardCollapseAllBtn" style="display:none;">全部收起</button>
+      </div>
+      <div id="hotelList"></div>
+    </main>
+    <div class="ops-popup" id="multiPopup" style="display:none;">
+      <div class="ops-popup__mask" id="multiPopupMask"></div>
+      <div class="ops-popup__sheet">
+        <div class="ops-popup__head">
+          <div class="ops-popup__title" id="multiPopupTitle">筛选</div>
+          <button type="button" class="ops-popup__close" id="multiPopupClose">×</button>
+        </div>
+        <div class="ops-popup__body" id="multiPopupBody"></div>
+        <div class="ops-popup__actions">
+          <button type="button" class="btn btn--outline btn--block" id="multiPopupSelectAll">全选</button>
+          <button type="button" class="btn btn--outline btn--block" id="multiPopupClear">清空</button>
+          <button type="button" class="btn btn--primary btn--block" id="multiPopupConfirm">确定</button>
+        </div>
+      </div>
+    </div>
+    <div class="ops-review-modal" id="reviewModal" style="display:none;">
+      <div class="ops-review-modal__mask" id="reviewModalMask"></div>
+      <div class="ops-review-modal__panel">
+        <div class="ops-review-modal__header">
+          <div class="ops-review-modal__icon">i</div>
+          <div class="ops-review-modal__title">待验收申请内容</div>
+          <div class="ops-review-modal__meta" id="reviewModalMeta"></div>
+        </div>
+        <div class="ops-review-modal__body">
+          <div class="ops-review-modal__content" id="reviewModalContent"></div>
+          <div class="ops-review-modal__images" id="reviewModalImages"></div>
+        </div>
+        <div class="ops-review-modal__actions">
+          <button type="button" class="btn btn--outline btn--block" id="reviewModalCloseBtn">关闭</button>
+          <button type="button" class="btn btn--primary btn--block" id="reviewModalGoBtn">去处理</button>
+        </div>
+      </div>
+    </div>
+    <div class="ops-image-modal" id="imageModal" style="display:none;">
+      <div class="ops-image-modal__mask" id="imageModalMask"></div>
+      <button type="button" class="ops-image-modal__close" id="imageModalClose" aria-label="关闭">×</button>
+      <div class="ops-image-modal__content">
+        <img id="imageModalImg" alt="预览大图">
+      </div>
+      <div class="ops-image-modal__hint">点击空白处关闭</div>
+    </div>
+    <div class="ops-recovery-modal" id="recoveryModal" style="display:none;">
+      <div class="ops-recovery-modal__mask" id="recoveryModalMask"></div>
+      <div class="ops-recovery-modal__panel">
+        <div class="ops-recovery-modal__header">
+          <div class="ops-recovery-modal__icon">↻</div>
+          <div class="ops-recovery-modal__title">申请恢复</div>
+          <div class="ops-recovery-modal__subtitle" id="recoveryModalSubtitle">填写处理结果，提交后由中台进行验收</div>
+        </div>
+        <div class="ops-recovery-modal__body">
+          <div class="ops-recovery-modal__field-label">处理说明<span class="ops-recovery-modal__field-tip">必填</span></div>
+          <textarea class="ops-recovery-modal__textarea" id="recoveryContentInput" placeholder="请填写与酒店沟通情况、异常处理结果"></textarea>
+          <div class="ops-recovery-modal__field-label">沟通截图<span class="ops-recovery-modal__field-tip">最多 5 张，可选</span></div>
+          <label class="ops-recovery-modal__upload" for="recoveryImageInput">+ 添加截图
+            <input type="file" id="recoveryImageInput" accept="image/*" multiple>
+          </label>
+          <div class="ops-recovery-modal__preview" id="recoveryImagePreview"></div>
+        </div>
+        <div class="ops-recovery-modal__actions">
+          <button type="button" class="btn btn--outline btn--block" id="recoveryCancelBtn">取消</button>
+          <button type="button" class="btn btn--primary btn--block" id="recoverySubmitBtn">提交申请</button>
+        </div>
+      </div>
+    </div>
+    <button type="button" class="ops-role-float" id="roleFloatBtn">切换角色</button>
+  </div>
+
+  <script src="../assets/js/mock/operations.js?v=65"></script>
+  <script src="../assets/js/utils.js?v=65"></script>
+  <script src="../assets/js/components/header.js?v=20"></script>
+  <script>
+    const role = (Utils.getUrlParam('role') || 'ops').trim();
+    const isMiddleRole = role === 'middle';
+    const isOpsRole = role === 'ops';
+    const isUnifiedRole = isMiddleRole || isOpsRole;
+    const currentOps = (Utils.getUrlParam('ops') || (isMiddleRole ? 'all' : '王莉')).trim();
+
+    const parseListParam = (key) => {
+      const raw = (Utils.getUrlParam(key) || '').trim();
+      if (!raw || raw === 'all') return [];
+      return raw.split(',').map((s) => s.trim()).filter(Boolean);
+    };
+
+    const ABNORMAL_OPTIONS = ['listing', 'premium', 'ranking', 'normal'];
+    const ABNORMAL_LABEL_MAP = {
+      listing: '上架异常',
+      premium: '溢价异常',
+      ranking: '排名异常',
+      normal: '正常'
+    };
+    let abnormalFilter = parseListParam('abnormal');
+    let opsFilter = parseListParam('opsOwner');
+    let provinceFilter = parseListParam('province');
+    let keyword = (Utils.getUrlParam('keyword') || '').trim();
+    let sortFilter = (Utils.getUrlParam('sort') || 'latest_desc').trim();
+    let viewMode = (Utils.getUrlParam('view') || 'card').trim();
+    const expandedHotels = new Set(); // 展开酒店名的 hotelId 集合
+    const collapsedCards = new Set(); // 收起卡片集合：hotelId::channel
+    let visibleCardKeys = []; // 当前筛选结果中的可见卡片 key
+    let recoveryTarget = null;
+    let recoveryImages = [];
+    let reviewTargetHref = '';
+
+    abnormalFilter = abnormalFilter.filter((x) => ABNORMAL_OPTIONS.includes(x));
+    if (!['latest_desc', 'duration_desc'].includes(sortFilter)) sortFilter = 'latest_desc';
+    if (!['simple', 'card'].includes(viewMode)) viewMode = 'card';
+
+    Header.render('#header', {
+      title: 'OTA巡检',
+      showBack: true,
+      backHref: `ops-board.html?role=${encodeURIComponent(role)}&ops=${encodeURIComponent(currentOps)}`
+    });
+
+    // ========= 顶部筛选 DOM 构建 =========
+    const topFiltersEl = document.getElementById('topScopeFilters');
+    if (isUnifiedRole) {
+      topFiltersEl.classList.remove('ops-filter-row--single');
+      topFiltersEl.innerHTML = `
+        <button type="button" class="ops-multi-btn" id="opsFilterBtn">
+          <span class="ops-multi-btn__label" id="opsFilterLabel">运营（全部）</span>
+          <span class="ops-multi-btn__arrow">▼</span>
+        </button>
+        <button type="button" class="ops-multi-btn" id="provinceFilterBtn">
+          <span class="ops-multi-btn__label" id="provinceFilterLabel">省份（全部）</span>
+          <span class="ops-multi-btn__arrow">▼</span>
+        </button>
+      `;
+    } else {
+      topFiltersEl.classList.add('ops-filter-row--single');
+      topFiltersEl.innerHTML = `
+        <select class="form-select form-select--sm" id="provinceFilter"></select>
+      `;
+    }
+
+    // ========= 多选弹窗控制 =========
+    const popupEl = document.getElementById('multiPopup');
+    const popupTitleEl = document.getElementById('multiPopupTitle');
+    const popupBodyEl = document.getElementById('multiPopupBody');
+    const popupSelectAllBtn = document.getElementById('multiPopupSelectAll');
+    const popupClearBtn = document.getElementById('multiPopupClear');
+    const popupConfirmBtn = document.getElementById('multiPopupConfirm');
+    const popupMaskEl = document.getElementById('multiPopupMask');
+    const popupCloseBtn = document.getElementById('multiPopupClose');
+    let popupContext = null; // { kind: 'ops' | 'province' | 'abnormal', options: string[], selected: Set }
+
+    function isPopupAllSelected() {
+      if (!popupContext || !popupContext.options.length) return false;
+      return popupContext.options.every((opt) => popupContext.selected.has(opt));
+    }
+
+    function updatePopupSelectAllBtn() {
+      if (!popupContext) return;
+      const hasOptions = popupContext.options.length > 0;
+      popupSelectAllBtn.disabled = !hasOptions;
+      popupSelectAllBtn.textContent = isPopupAllSelected() ? '取消全选' : '全选';
+    }
+
+    function openMultiPopup(kind, title, options, currentSelected) {
+      popupContext = {
+        kind,
+        options: options.slice(),
+        selected: new Set(currentSelected.filter((x) => options.includes(x)))
+      };
+      popupTitleEl.textContent = title;
+      renderPopupBody();
+      popupEl.style.display = 'flex';
+    }
+
+    function renderPopupBody() {
+      if (!popupContext) return;
+      popupBodyEl.innerHTML = popupContext.options.map((opt) => `
+        <label class="ops-check-item">
+          <input type="checkbox" value="${opt}" ${popupContext.selected.has(opt) ? 'checked' : ''}>
+          <span class="ops-check-item__label">${popupContext.kind === 'abnormal' ? (ABNORMAL_LABEL_MAP[opt] || opt) : opt}</span>
+        </label>
+      `).join('') || '<div class="fin-empty-hint">暂无可选项</div>';
+      updatePopupSelectAllBtn();
+    }
+
+    function closeMultiPopup() {
+      popupEl.style.display = 'none';
+      popupContext = null;
+    }
+
+    popupBodyEl.addEventListener('change', (e) => {
+      const target = e.target;
+      if (!target || target.tagName !== 'INPUT' || !popupContext) return;
+      if (target.checked) popupContext.selected.add(target.value);
+      else popupContext.selected.delete(target.value);
+      updatePopupSelectAllBtn();
+    });
+
+    popupSelectAllBtn.addEventListener('click', () => {
+      if (!popupContext) return;
+      if (isPopupAllSelected()) {
+        popupContext.selected.clear();
+      } else {
+        popupContext.selected = new Set(popupContext.options);
+      }
+      renderPopupBody();
+    });
+
+    popupClearBtn.addEventListener('click', () => {
+      if (!popupContext) return;
+      popupContext.selected.clear();
+      renderPopupBody();
+    });
+
+    popupConfirmBtn.addEventListener('click', () => {
+      if (!popupContext) return;
+      const arr = [...popupContext.selected];
+      if (popupContext.kind === 'ops') opsFilter = arr;
+      else if (popupContext.kind === 'province') provinceFilter = arr;
+      else if (popupContext.kind === 'abnormal') abnormalFilter = arr;
+      closeMultiPopup();
+      render();
+    });
+
+    popupMaskEl.addEventListener('click', closeMultiPopup);
+    popupCloseBtn.addEventListener('click', closeMultiPopup);
+
+    function getRoleSwitchHref(targetRole) {
+      const abnormalParam = abnormalFilter.length ? abnormalFilter.join(',') : 'all';
+      let nextOps = currentOps;
+      if (targetRole === 'middle') {
+        nextOps = 'all';
+      } else if (!nextOps || nextOps === 'all') {
+        nextOps = opsFilter[0] || '王莉';
+      }
+      return `ops-ota-list.html?role=${encodeURIComponent(targetRole)}&ops=${encodeURIComponent(nextOps)}&abnormal=${encodeURIComponent(abnormalParam)}&opsOwner=${encodeURIComponent(opsFilter.join(','))}&province=${encodeURIComponent(provinceFilter.join(','))}&keyword=${encodeURIComponent(keyword)}&sort=${encodeURIComponent(sortFilter)}&view=${encodeURIComponent(viewMode)}`;
+    }
+
+    // ========= 数据构建 =========
+    function buildHotelRow(hotel) {
+      const summary = Utils.getOpsPatrolSummary(hotel);
+      const channels = Utils.getOpsPatrolSummaryByChannel(hotel);
+      return { hotel, summary, channels };
+    }
+
+    function getAbnormalKeysByChannel(channelItem) {
+      if (!channelItem?.lastInspectionAt) return ['unpatrolled'];
+      const keys = [];
+      const resultType = channelItem?.lastResultType || 'unknown';
+      if (resultType === 'listing' || resultType === 'both') keys.push('listing');
+      if (resultType === 'premium' || resultType === 'both') keys.push('premium');
+      if (channelItem?.rankingStatus === 'abnormal') keys.push('ranking');
+      if (!keys.length) keys.push('normal');
+      return keys;
+    }
+
+    function matchesAbnormalChannel(channelItem) {
+      if (!abnormalFilter.length || abnormalFilter.length === ABNORMAL_OPTIONS.length) return true;
+      const keys = getAbnormalKeysByChannel(channelItem);
+      return abnormalFilter.some((item) => keys.includes(item));
+    }
+
+    function safeAttr(text) {
+      return String(text || '').replace(/"/g, '&quot;');
+    }
+
+    function getAbnormalFilterLabel() {
+      if (!abnormalFilter.length || abnormalFilter.length === ABNORMAL_OPTIONS.length) return '异常（all）';
+      if (abnormalFilter.length === 1) return ABNORMAL_LABEL_MAP[abnormalFilter[0]] || '异常（all）';
+      const first = ABNORMAL_LABEL_MAP[abnormalFilter[0]] || '异常';
+      return `${first} +${abnormalFilter.length - 1}`;
+    }
+
+    function buildSystemResultTags(channelItem) {
+      const keys = getAbnormalKeysByChannel(channelItem);
+      const pill = (level, label, title, iconText = '') => `<span class="ops-status-pill ops-status-pill--${level}" title="${title}"><span class="ops-status-pill__icon">${iconText}</span>${label}</span>`;
+      if (keys.length === 1 && keys[0] === 'normal') {
+        return pill('normal', '正常', '系统判定：正常', '');
+      }
+      if (keys.length === 1 && keys[0] === 'unpatrolled') {
+        return pill('unpatrolled', '未巡检', '该渠道暂无巡检记录', '');
+      }
+      return keys.map((key) => {
+        if (key === 'listing') return pill('danger', '上架', '上架异常', '!');
+        if (key === 'premium') return pill('danger', '溢价', '溢价异常', '!');
+        if (key === 'ranking') return pill('danger', '排名', '排名异常', '!');
+        return pill('normal', '正常', '系统判定：正常', '');
+      }).join('');
+    }
+
+    function buildPresaleCell(presaleTitle) {
+      const trimmed = String(presaleTitle || '').trim();
+      if (!trimmed) {
+        return '<span class="ops-presale-pill ops-presale-pill--none" title="无套餐">无</span>';
+      }
+      if (trimmed === '无') {
+        return '<span class="ops-presale-pill ops-presale-pill--none" title="无套餐">无</span>';
+      }
+      return `<span class="ops-presale-pill ops-presale-pill--has" title="${trimmed.replace(/&/g, '&amp;').replace(/"/g, '&quot;')}">有</span>`;
+    }
+
+    function buildDurationCell(channelItem) {
+      if (!channelItem?.isAbnormal) return '<span class="ops-duration-pill ops-duration-pill--muted">-</span>';
+      const hours = Number(channelItem.abnormalDurationHours) || 0;
+      const dangerCls = hours >= 48 ? ' ops-duration-pill--alert' : '';
+      return `<span class="ops-duration-pill${dangerCls}">异常 ${hours}h</span>`;
+    }
+
+    function buildInspectionCell(isoTime) {
+      if (!isoTime) return '-';
+      const d = new Date(isoTime);
+      if (Number.isNaN(d.getTime())) return '-';
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      const hh = String(d.getHours()).padStart(2, '0');
+      const mm = String(d.getMinutes()).padStart(2, '0');
+      const currentYear = new Date().getFullYear();
+      const dateText = y === currentYear ? `${m}/${day}` : `${String(y).slice(2)}/${m}/${day}`;
+      return `<div class="ops-inspect-cell"><div class="ops-inspect-cell__date">${dateText}</div><div class="ops-inspect-cell__time">${hh}:${mm}</div></div>`;
+    }
+
+    // ========= 卡片渲染辅助 =========
+    function getLatestRecordByChannel(hotelId, channel) {
+      const records = Utils.getOpsRecords()
+        .filter((r) => Number(r.hotelId) === Number(hotelId) && r.channel === channel);
+      if (!records.length) return null;
+      records.sort((a, b) => {
+        const at = String(a.inspectionAt || `${a.date}T00:00:00`);
+        const bt = String(b.inspectionAt || `${b.date}T00:00:00`);
+        if (bt !== at) return bt.localeCompare(at);
+        return String(b.id || '').localeCompare(String(a.id || ''));
+      });
+      return records[0];
+    }
+
+    function listingStatusText(status) {
+      if (status === 'on_sale') return '在售';
+      if (status === 'sold_out') return '满房';
+      if (status === 'unavailable') return '不可售';
+      return '未上架';
+    }
+
+    function isListingAbnormalStatus(status) {
+      return status === 'not_listed' || status === 'unavailable';
+    }
+
+    function buildStatusSection(label, isAbnormal, bodyHtml, tailHtml, extraHtml) {
+      const iconCls = isAbnormal ? 'is-abnormal' : 'is-normal';
+      const iconText = isAbnormal ? '!' : '✓';
+      return `
+        <div class="ops-card__section${isAbnormal ? ' is-abnormal' : ''}">
+          <div class="ops-card__section-head">
+            <span class="ops-card__row-icon ${iconCls}">${iconText}</span>
+            <span class="ops-card__row-label">${label}</span>
+            ${tailHtml || ''}
+          </div>
+          ${bodyHtml ? `<div class="ops-card__section-body">${bodyHtml}</div>` : ''}
+          ${extraHtml || ''}
+        </div>
+      `;
+    }
+
+    // 上架排序：未上架(0) < 不可售(1) < 在售(2) < 满房(3)
+    function listingSortRank(status) {
+      if (status === 'not_listed') return 0;
+      if (status === 'unavailable') return 1;
+      if (status === 'on_sale') return 2;
+      if (status === 'sold_out') return 3;
+      return 9;
+    }
+
+    function buildListingTag(status) {
+      const text = listingStatusText(status);
+      const cls = `ops-listing-tag is-${status}`;
+      return `<span class="${cls}">${text}</span>`;
+    }
+
+    function buildRoomLine(roomName, valueHtml, abnormal) {
+      const nameHtml = roomName
+        ? `<span class="ops-card__room-name" title="${safeAttr(roomName)}">${roomName}</span>`
+        : '<span class="ops-card__room-name is-empty"></span>';
+      return `<div class="ops-card__room${abnormal ? ' is-abnormal' : ''}">
+        ${nameHtml}
+        <span class="ops-card__room-value">${valueHtml}</span>
+      </div>`;
+    }
+
+    function buildListingDetailRow(hotel, latestRecord) {
+      const roomMap = {};
+      (hotel.roomTypes || []).forEach((rt) => { roomMap[rt.id] = rt; });
+      const inputs = ((latestRecord && latestRecord.roomInputs) || []).slice();
+      inputs.sort((a, b) => listingSortRank(a.status) - listingSortRank(b.status));
+      let hasAbnormal = false;
+      let bodyHtml = '';
+      if (!inputs.length) {
+        bodyHtml = '<div class="ops-card__room is-empty"><span class="ops-card__room-value">暂无房型数据</span></div>';
+      } else {
+        bodyHtml = inputs.map((room) => {
+          const rt = roomMap[room.roomTypeId] || { name: room.roomTypeId };
+          const abnormal = isListingAbnormalStatus(room.status);
+          if (abnormal) hasAbnormal = true;
+          return buildRoomLine(rt.name, buildListingTag(room.status), abnormal);
+        }).join('');
+      }
+      return { hasAbnormal, html: buildStatusSection('上架', hasAbnormal, bodyHtml) };
+    }
+
+    function buildPremiumDetailRow(hotel, latestRecord) {
+      const roomMap = {};
+      (hotel.roomTypes || []).forEach((rt) => { roomMap[rt.id] = rt; });
+      const target = Number(hotel.targetPremiumRate) || 0;
+      const allInputs = (latestRecord && latestRecord.roomInputs) || [];
+      const items = allInputs
+        .filter((r) => !isListingAbnormalStatus(r.status))
+        .map((room) => {
+          const rate = Utils.calcPremiumRate(room.salePrice, room.basePrice);
+          const over = rate - target;
+          return { room, rate, over, abnormal: rate > target };
+        });
+      items.sort((a, b) => {
+        if (a.abnormal !== b.abnormal) return a.abnormal ? -1 : 1;
+        if (a.abnormal && b.abnormal) return b.over - a.over;
+        return a.over - b.over;
+      });
+      const hasAbnormal = items.some((x) => x.abnormal);
+      let bodyHtml = '';
+      if (!items.length) {
+        bodyHtml = '<div class="ops-card__room is-empty"><span class="ops-card__room-value">暂无可售房型，无法计算溢价</span></div>';
+      } else {
+        bodyHtml = items.map(({ room, rate, abnormal }) => {
+          const rt = roomMap[room.roomTypeId] || { name: room.roomTypeId };
+          const value = `<span class="ops-premium-num">实际 ${Utils.formatPercent(rate)}</span><span class="ops-premium-sep"> / </span><span class="ops-premium-target">合同 ${Utils.formatPercent(target)}</span>`;
+          return buildRoomLine(rt.name, value, abnormal);
+        }).join('');
+      }
+      return { hasAbnormal, html: buildStatusSection('溢价', hasAbnormal, bodyHtml) };
+    }
+
+    function buildRankingDetailRow(channelItem) {
+      const pos = Number(channelItem.rankingPosition) || 0;
+      let hasAbnormal = false;
+      let tailHtml = '';
+      let extraHtml = '';
+      if (!pos) {
+        tailHtml = '<span class="ops-card__section-tail is-empty">未填写</span>';
+      } else {
+        hasAbnormal = pos > 5;
+        tailHtml = `<span class="ops-card__section-tail">第 ${pos} 名</span>`;
+        if (!channelItem.rankingScreenshot) {
+          extraHtml = '<div class="ops-card__section-tip is-alert">无截图</div>';
+        }
+      }
+      return { hasAbnormal, html: buildStatusSection('排名', hasAbnormal, '', tailHtml, extraHtml) };
+    }
+
+    function buildTimeBadge(channelItem) {
+      const keys = getAbnormalKeysByChannel(channelItem);
+      const isAllNormal = keys.length === 1 && keys[0] === 'normal';
+      if (isAllNormal) {
+        return '<span class="ops-card__time-badge is-normal">正常</span>';
+      }
+      const hours = Number(channelItem.abnormalDurationHours) || 0;
+      if (hours >= 48) {
+        return `<span class="ops-card__time-badge is-alert">异常 ${hours}h</span>`;
+      }
+      if (hours > 0) {
+        return `<span class="ops-card__time-badge is-warn">异常 ${hours}h</span>`;
+      }
+      return '<span class="ops-card__time-badge is-warn">异常</span>';
+    }
+
+    function getCardCollapseKey(hotelId, channel) {
+      return `${hotelId}::${channel}`;
+    }
+
+    function getRecoveryApplySummary(channelItem) {
+      const apply = channelItem?.recoveryApply || {};
+      const hasApply = !!(apply.submittedAt || (apply.content || '').trim());
+      if (!hasApply) return '';
+      const content = String(apply.content || '').trim();
+      const shortText = content.length > 32 ? `${content.slice(0, 32)}...` : content;
+      const submittedAt = Utils.formatDateTime(apply.submittedAt);
+      const imageCount = Array.isArray(apply.images) ? apply.images.length : 0;
+      const countText = imageCount ? ` · ${imageCount}图` : '';
+      return `
+        <div class="ops-card__apply-summary">
+          <div class="ops-card__apply-summary-title">申请恢复：${submittedAt}${countText}</div>
+          <div class="ops-card__apply-summary-text">${shortText || '（未填写说明）'}</div>
+        </div>
+      `;
+    }
+
+    function buildEntryHrefForChannel(hotelId, channel) {
+      const hotel = Utils.getOpsHotelById(hotelId);
+      if (!hotel) return buildDetailHref(hotelId);
+      const channels = Utils.getOpsPatrolSummaryByChannel(hotel);
+      const ch = channels.find((x) => x.channel === channel) || { channel };
+      const latestRecord = getLatestRecordByChannel(hotelId, channel);
+      return buildDetailHref(hotelId, {
+        dateFilter: ch.lastInspectionDate || '',
+        channelFilter: channel || '',
+        recordId: latestRecord?.id || '',
+        date: latestRecord?.date || '',
+        channel: channel || ''
+      });
+    }
+
+    function openReviewModal(hotelId, channel) {
+      const hotel = Utils.getOpsHotelById(hotelId);
+      if (!hotel) return;
+      const ch = (Utils.getOpsPatrolSummaryByChannel(hotel) || []).find((x) => x.channel === channel);
+      if (!ch) return;
+      const apply = ch.recoveryApply || {};
+      const rawText = String(apply.content || '').trim();
+      const content = rawText || '（未填写说明）';
+      const images = Array.isArray(apply.images) ? apply.images : [];
+      const submittedAt = Utils.formatDateTime(apply.submittedAt || ch.pendingApplyAt || '');
+      document.getElementById('reviewModalMeta').textContent = `${hotel.name} · ${Utils.channelLabel(channel)} · ${submittedAt !== '-' ? submittedAt : '提交时间未知'}`;
+      const contentEl = document.getElementById('reviewModalContent');
+      contentEl.textContent = content;
+      contentEl.classList.toggle('ops-review-modal__content--empty', !rawText);
+      document.getElementById('reviewModalImages').innerHTML = images.length
+        ? images.map((img) => `
+          <button type="button" class="ops-recovery-modal__preview-item" data-preview-src="${img.url}" style="border:0;background:transparent;padding:0;cursor:pointer;">
+            <img src="${img.url}" alt="${img.name || '截图'}">
+          </button>
+        `).join('')
+        : '<div class="ops-review-modal__images-empty">未上传截图</div>';
+      reviewTargetHref = buildEntryHrefForChannel(hotelId, channel);
+      document.getElementById('reviewModal').style.display = 'flex';
+    }
+
+    function closeReviewModal() {
+      document.getElementById('reviewModal').style.display = 'none';
+      reviewTargetHref = '';
+    }
+
+    function openImagePreview(src) {
+      if (!src) return;
+      document.getElementById('imageModalImg').src = src;
+      document.getElementById('imageModal').style.display = 'flex';
+      document.body.style.overflow = 'hidden';
+    }
+
+    function closeImagePreview() {
+      document.getElementById('imageModal').style.display = 'none';
+      document.getElementById('imageModalImg').src = '';
+      document.body.style.overflow = '';
+    }
+
+    function buildOpsRecoveryAction(hotel, channelItem) {
+      if (!isOpsRole) return '';
+      if (!channelItem.lastInspectionAt) return '';
+      if (channelItem.processingStatus === 'processing') {
+        return `<button type="button" class="btn btn--outline btn--sm ops-recovery-btn" data-recovery-open="${hotel.id}::${channelItem.channel}">申请恢复</button>`;
+      }
+      if (channelItem.processingStatus === 'pending_review') {
+        return '<span class="tag tag--warning">已申请</span>';
+      }
+      return '<span class="tag tag--success">正常</span>';
+    }
+
+    function buildChannelCard(hotel, ch) {
+      const channelLabel = Utils.channelLabel(ch.channel);
+      const presaleCell = buildPresaleCell(ch.presalePackageTitle);
+      const isUnpatrolled = !ch.lastInspectionAt;
+      const latestRecord = getLatestRecordByChannel(hotel.id, ch.channel);
+      const detailHref = buildDetailHref(hotel.id, {
+        dateFilter: ch.lastInspectionDate || '',
+        channelFilter: ch.channel || '',
+        recordId: latestRecord?.id || '',
+        date: latestRecord?.date || '',
+        channel: ch.channel || ''
+      });
+      const collapseKey = getCardCollapseKey(hotel.id, ch.channel);
+      const isCollapsed = collapsedCards.has(collapseKey);
+      const collapseBtn = `
+        <button
+          type="button"
+          class="ops-card__collapse-btn"
+          data-toggle-card="${safeAttr(collapseKey)}"
+          aria-expanded="${isCollapsed ? 'false' : 'true'}"
+          aria-label="${isCollapsed ? '展开卡片' : '收起卡片'}"
+        >${isCollapsed ? '展开' : '收起'}</button>
+      `;
+      if (isUnpatrolled) {
+        return `
+          <a class="ops-card ops-card--unpatrolled${isCollapsed ? ' is-collapsed' : ''}" href="${detailHref}">
+            <header class="ops-card__head">
+              <div class="ops-card__title">
+                <span class="ops-card__hotel" title="${safeAttr(hotel.name)}">${hotel.name}</span>
+                <span class="ops-card__channel ops-card__channel--${ch.channel}">${channelLabel}</span>
+              </div>
+              <div class="ops-card__head-right">
+                <span class="ops-card__time-badge is-unpatrolled">未巡检</span>
+                ${collapseBtn}
+              </div>
+            </header>
+            <div class="ops-card__sub">${hotel.province || '-'} · ${hotel.ownerOps || '-'}</div>
+            <div class="ops-card__empty">该渠道暂无巡检记录，点击进入新增巡检</div>
+          </a>
+        `;
+      }
+      const statusMeta = Utils.getOpsPatrolStatusMeta(ch.processingStatus);
+      const showProcessingTag = ch.processingStatus && ch.processingStatus !== 'normal';
+      const recoveryAction = buildOpsRecoveryAction(hotel, ch);
+      const recoverySummary = getRecoveryApplySummary(ch);
+      const inspectionText = Utils.formatDateTime(ch.lastInspectionAt);
+      const timeBadge = buildTimeBadge(ch);
+      const listing = buildListingDetailRow(hotel, latestRecord);
+      const premium = buildPremiumDetailRow(hotel, latestRecord);
+      const ranking = buildRankingDetailRow(ch);
+      const orderedRows = [listing, premium, ranking].slice().sort((a, b) => Number(b.hasAbnormal) - Number(a.hasAbnormal));
+      const rowsHtml = orderedRows.map((r) => r.html).join('');
+      const footerItems = [];
+      if (isOpsRole) {
+        footerItems.push(`
+          <div class="ops-card__footer-item">
+            <div class="ops-card__footer-label">处理结果</div>
+            <div class="ops-card__footer-value">${recoveryAction || '-'}</div>
+          </div>
+        `);
+      } else if (isMiddleRole && ch.processingStatus === 'pending_review') {
+        footerItems.push(`
+          <div class="ops-card__footer-item">
+            <div class="ops-card__footer-label">处理结果</div>
+            <div class="ops-card__footer-value"><button type="button" class="btn btn--outline btn--sm ops-pending-review-btn" data-review-open="${hotel.id}::${ch.channel}">待验收</button></div>
+          </div>
+        `);
+      } else if (showProcessingTag) {
+        footerItems.push(`
+          <div class="ops-card__footer-item">
+            <div class="ops-card__footer-label">处理结果</div>
+            <div class="ops-card__footer-value"><span class="tag tag--${statusMeta.tag}">${statusMeta.label}</span></div>
+          </div>
+        `);
+      }
+      footerItems.push(`
+        <div class="ops-card__footer-item">
+          <div class="ops-card__footer-label">最近巡检</div>
+          <div class="ops-card__footer-value">${inspectionText}</div>
+        </div>
+      `);
+      footerItems.push(`
+        <div class="ops-card__footer-item">
+          <div class="ops-card__footer-label">套餐</div>
+          <div class="ops-card__footer-value">${presaleCell}</div>
+        </div>
+      `);
+      return `
+        <a class="ops-card${isCollapsed ? ' is-collapsed' : ''}" href="${detailHref}">
+          <header class="ops-card__head">
+            <div class="ops-card__title">
+              <span class="ops-card__hotel" title="${safeAttr(hotel.name)}">${hotel.name}</span>
+              <span class="ops-card__channel ops-card__channel--${ch.channel}">${channelLabel}</span>
+            </div>
+            <div class="ops-card__head-right">
+              ${timeBadge}
+              ${collapseBtn}
+            </div>
+          </header>
+          <div class="ops-card__sub">${hotel.province || '-'} · ${hotel.ownerOps || '-'}</div>
+          <div class="ops-card__rows">${rowsHtml}</div>
+          <footer class="ops-card__footer">${footerItems.join('')}</footer>
+          ${recoverySummary}
+        </a>
+      `;
+    }
+
+    function renderListMiddleCards(hotelRows) {
+      const listEl = document.getElementById('hotelList');
+      visibleCardKeys = [];
+      if (!hotelRows.length) {
+        listEl.innerHTML = '<div class="empty-state"><div class="empty-state__icon">🏨</div><div class="empty-state__text">暂无符合条件酒店</div></div>';
+        syncCardCollapseAllBtn();
+        return;
+      }
+      let totalCardCount = 0;
+      const html = hotelRows.map(({ hotel, channels }) => {
+        if (!channels.length) return '';
+        return channels.map((ch) => {
+          totalCardCount++;
+          visibleCardKeys.push(getCardCollapseKey(hotel.id, ch.channel));
+          return buildChannelCard(hotel, ch);
+        }).join('');
+      }).join('');
+      listEl.innerHTML = `<div class="ops-card-list">${html}</div>`;
+      document.getElementById('summaryText').textContent = `共 ${hotelRows.length} 家酒店 / ${totalCardCount} 张卡片`;
+      syncCardCollapseAllBtn();
+    }
+
+    function getHotelSampleFlags(hotel) {
+      const channels = Utils.getOpsPatrolSummaryByChannel(hotel);
+      let hasMulti = false;
+      let hasAllThree = false;
+      let hasPending = false;
+      let hasListingOnly = false;
+      let hasPremiumOnly = false;
+      let hasRankingOnly = false;
+      let hasNormal = false;
+      let hasUnfilledRanking = false;
+      channels.forEach((ch) => {
+        if (ch.processingStatus === 'pending_review') hasPending = true;
+        if (ch.rankingStatus === 'unknown') hasUnfilledRanking = true;
+        const keys = getAbnormalKeysByChannel(ch);
+        const abnormalKeys = keys.filter((x) => x !== 'normal');
+        if (abnormalKeys.includes('listing') && abnormalKeys.includes('premium') && abnormalKeys.includes('ranking')) {
+          hasAllThree = true;
+        }
+        if (!abnormalKeys.length) hasNormal = true;
+        else if (abnormalKeys.length > 1) hasMulti = true;
+        else if (abnormalKeys[0] === 'listing') hasListingOnly = true;
+        else if (abnormalKeys[0] === 'premium') hasPremiumOnly = true;
+        else if (abnormalKeys[0] === 'ranking') hasRankingOnly = true;
+      });
+      return { hasMulti, hasAllThree, hasPending, hasListingOnly, hasPremiumOnly, hasRankingOnly, hasNormal, hasUnfilledRanking };
+    }
+
+    function pickMiddleSampleHotels(hotels) {
+      if (hotels.length <= 10) return hotels;
+      const buckets = { allThree: [], pending: [], multi: [], rankingOnly: [], listingOnly: [], premiumOnly: [], normal: [], unfilled: [], rest: [] };
+      hotels.forEach((hotel) => {
+        const flags = getHotelSampleFlags(hotel);
+        if (flags.hasAllThree) buckets.allThree.push(hotel);
+        else if (flags.hasPending) buckets.pending.push(hotel);
+        else if (flags.hasMulti) buckets.multi.push(hotel);
+        else if (flags.hasRankingOnly) buckets.rankingOnly.push(hotel);
+        else if (flags.hasListingOnly) buckets.listingOnly.push(hotel);
+        else if (flags.hasPremiumOnly) buckets.premiumOnly.push(hotel);
+        else if (flags.hasNormal) buckets.normal.push(hotel);
+        else if (flags.hasUnfilledRanking) buckets.unfilled.push(hotel);
+        else buckets.rest.push(hotel);
+      });
+      const result = [];
+      const added = new Set();
+      const pushSome = (list, maxCount) => {
+        list.forEach((item) => {
+          if (result.length >= 10 || maxCount <= 0) return;
+          if (added.has(item.id)) return;
+          result.push(item);
+          added.add(item.id);
+          maxCount--;
+        });
+      };
+      pushSome(buckets.allThree, 1);
+      pushSome(buckets.pending, 3);
+      pushSome(buckets.multi, 2);
+      pushSome(buckets.rankingOnly, 2);
+      pushSome(buckets.listingOnly, 2);
+      pushSome(buckets.premiumOnly, 2);
+      pushSome(buckets.normal, 1);
+      pushSome(buckets.unfilled, 1);
+      hotels.forEach((item) => {
+        if (result.length >= 10) return;
+        if (added.has(item.id)) return;
+        result.push(item);
+        added.add(item.id);
+      });
+      return result;
+    }
+
+    // ========= 筛选按钮文案 =========
+    function buildMultiBtnLabel(prefix, selected, total) {
+      if (!selected.length || selected.length === total) return `${prefix}（全部）`;
+      if (selected.length === 1) return selected[0];
+      return `${selected[0]} +${selected.length - 1}`;
+    }
+
+    function syncViewToggleUI() {
+      const wrap = document.getElementById('viewToggle');
+      if (!wrap) return;
+      if (!isUnifiedRole) { wrap.style.display = 'none'; return; }
+      wrap.style.display = '';
+      wrap.querySelectorAll('.ops-view-toggle__btn').forEach((btn) => {
+        btn.classList.toggle('ops-view-toggle__btn--active', btn.dataset.view === viewMode);
+      });
+    }
+
+    function syncCardCollapseAllBtn() {
+      const btn = document.getElementById('cardCollapseAllBtn');
+      if (!btn) return;
+      if (!isUnifiedRole || viewMode !== 'card' || !visibleCardKeys.length) {
+        btn.style.display = 'none';
+        return;
+      }
+      btn.style.display = 'inline-flex';
+      const allCollapsed = visibleCardKeys.every((key) => collapsedCards.has(key));
+      btn.textContent = allCollapsed ? '全部展开' : '全部收起';
+      btn.dataset.action = allCollapsed ? 'expand' : 'collapse';
+    }
+
+    function renderFilters(hotelRows) {
+      syncViewToggleUI();
+      document.getElementById('abnormalFilterLabel').textContent = getAbnormalFilterLabel();
+      document.getElementById('abnormalFilterBtn').classList.toggle('is-active', abnormalFilter.length > 0 && abnormalFilter.length < ABNORMAL_OPTIONS.length);
+      document.getElementById('abnormalFilterBtn').onclick = () => openMultiPopup('abnormal', '选择异常筛选', ABNORMAL_OPTIONS, abnormalFilter);
+      document.getElementById('hotelSearch').value = keyword;
+      document.getElementById('sortFilter').value = sortFilter;
+
+      if (isUnifiedRole) {
+        const ownerList = [...new Set(hotelRows.map((x) => x.hotel.ownerOps).filter(Boolean))];
+        const opsBtn = document.getElementById('opsFilterBtn');
+        const opsLabel = document.getElementById('opsFilterLabel');
+        const validOps = opsFilter.filter((x) => ownerList.includes(x));
+        if (validOps.length !== opsFilter.length) opsFilter = validOps;
+        opsLabel.textContent = buildMultiBtnLabel('运营', opsFilter, ownerList.length);
+        opsBtn.classList.toggle('is-active', opsFilter.length > 0);
+        opsBtn.onclick = () => openMultiPopup('ops', '选择运营', ownerList, opsFilter);
+
+        const rowsByOwner = opsFilter.length ? hotelRows.filter((x) => opsFilter.includes(x.hotel.ownerOps)) : hotelRows;
+        const provinceList = [...new Set(rowsByOwner.map((x) => x.hotel.province).filter(Boolean))];
+        const validProvince = provinceFilter.filter((x) => provinceList.includes(x));
+        if (validProvince.length !== provinceFilter.length) provinceFilter = validProvince;
+        const provBtn = document.getElementById('provinceFilterBtn');
+        const provLabel = document.getElementById('provinceFilterLabel');
+        provLabel.textContent = buildMultiBtnLabel('省份', provinceFilter, provinceList.length);
+        provBtn.classList.toggle('is-active', provinceFilter.length > 0);
+        provBtn.onclick = () => openMultiPopup('province', '选择省份', provinceList, provinceFilter);
+      } else {
+        const provinces = [...new Set(hotelRows.map((x) => x.hotel.province).filter(Boolean))];
+        const provinceFilterEl = document.getElementById('provinceFilter');
+        const curVal = provinceFilter[0] || 'all';
+        provinceFilterEl.innerHTML = `
+          <option value="all">省份（all）</option>
+          ${provinces.map((name) => `<option value="${name}">${name}</option>`).join('')}
+        `;
+        provinceFilterEl.value = provinces.includes(curVal) ? curVal : 'all';
+        provinceFilterEl.onchange = (e) => {
+          provinceFilter = e.target.value === 'all' ? [] : [e.target.value];
+          render();
+        };
+      }
+    }
+
+    function renderOverview(hotelRows) {
+      const total = hotelRows.length;
+      const abnormalRows = hotelRows.filter((item) => item.channels.some((ch) => getAbnormalKeysByChannel(ch).some((x) => x !== 'normal')));
+      const listingRows = hotelRows.filter((item) => item.summary.listingAbnormal);
+      const premiumRows = hotelRows.filter((item) => item.summary.premiumAbnormal);
+      const ratio = total ? Utils.formatPercent(abnormalRows.length / total) : '0%';
+      document.getElementById('overviewInline').innerHTML = `
+        <div class="ops-overview-inline__item is-primary">
+          <div class="ops-overview-inline__label">酒店总数</div>
+          <div class="ops-overview-inline__valuebox">
+            <span class="ops-overview-inline__value">${total}</span>
+          </div>
+        </div>
+        <div class="ops-overview-inline__item is-danger">
+          <div class="ops-overview-inline__label">异常总数</div>
+          <div class="ops-overview-inline__valuebox">
+            <span class="ops-overview-inline__value">${abnormalRows.length}</span>
+            <span class="ops-overview-inline__sub">${ratio}</span>
+          </div>
+        </div>
+        <div class="ops-overview-inline__item is-warning">
+          <div class="ops-overview-inline__label">上架异常</div>
+          <div class="ops-overview-inline__valuebox">
+            <span class="ops-overview-inline__value">${listingRows.length}</span>
+          </div>
+        </div>
+        <div class="ops-overview-inline__item is-gold">
+          <div class="ops-overview-inline__label">溢价异常</div>
+          <div class="ops-overview-inline__valuebox">
+            <span class="ops-overview-inline__value">${premiumRows.length}</span>
+          </div>
+        </div>
+      `;
+    }
+
+    // ========= 酒店名截断工具 =========
+    const HOTEL_NAME_TRUNC = 16; // 汉字数
+    function countChars(str) {
+      // 粗略：一个非 ASCII 字符当 1，两个 ASCII 当 1
+      let asciiBuf = 0;
+      let count = 0;
+      for (const ch of String(str || '')) {
+        if (ch.charCodeAt(0) < 128) {
+          asciiBuf += 1;
+          if (asciiBuf >= 2) { count += 1; asciiBuf = 0; }
+        } else {
+          if (asciiBuf > 0) { count += 1; asciiBuf = 0; }
+          count += 1;
+        }
+      }
+      if (asciiBuf > 0) count += 1;
+      return count;
+    }
+
+    function needsTruncation(name) {
+      return countChars(name) > HOTEL_NAME_TRUNC;
+    }
+
+    function buildDetailHref(hotelId, options = {}) {
+      const abnormalParam = abnormalFilter.length ? abnormalFilter.join(',') : 'all';
+      const dateFilterValue = String(options.dateFilter || '').trim();
+      const channelFilterValue = String(options.channelFilter || '').trim();
+      const recordIdValue = String(options.recordId || '').trim();
+      const dateValue = String(options.date || '').trim();
+      const channelValue = String(options.channel || '').trim();
+      return `ops-ota-entry.html?id=${hotelId}&role=${encodeURIComponent(role)}&ops=${encodeURIComponent(currentOps)}&abnormal=${encodeURIComponent(abnormalParam)}&opsOwner=${encodeURIComponent(opsFilter.join(','))}&province=${encodeURIComponent(provinceFilter.join(','))}&keyword=${encodeURIComponent(keyword)}&sort=${encodeURIComponent(sortFilter)}&view=${encodeURIComponent(viewMode)}&dateFilter=${encodeURIComponent(dateFilterValue)}&channelFilter=${encodeURIComponent(channelFilterValue)}&recordId=${encodeURIComponent(recordIdValue)}&date=${encodeURIComponent(dateValue)}&channel=${encodeURIComponent(channelValue)}`;
+    }
+
+    // ========= 列表渲染 =========
+    function renderListMiddle(hotelRows) {
+      const listEl = document.getElementById('hotelList');
+      visibleCardKeys = [];
+      syncCardCollapseAllBtn();
+      if (!hotelRows.length) {
+        listEl.innerHTML = '<div class="empty-state"><div class="empty-state__icon">🏨</div><div class="empty-state__text">暂无符合条件酒店</div></div>';
+        return;
+      }
+      // 构建表格行。一酒店多渠道 rowspan。
+      let totalChannelRows = 0;
+      const bodyHtml = hotelRows.map(({ hotel, channels }) => {
+        // channels 已按异常筛选过滤
+        if (!channels.length) return '';
+        totalChannelRows += channels.length;
+        const isExpanded = expandedHotels.has(hotel.id);
+        const truncated = needsTruncation(hotel.name);
+        const nameClass = truncated && !isExpanded ? 'ops-table__hotel-name is-ellipsis' : 'ops-table__hotel-name';
+        const nameCell = `
+          <td class="ops-table__hotel-cell" rowspan="${channels.length}" data-hotel-id="${hotel.id}">
+            <div class="${nameClass}" data-toggle-name="${hotel.id}" title="${hotel.name}">${hotel.name}</div>
+            <div class="ops-table__hotel-sub">${hotel.province || '-'} · ${hotel.ownerOps || '-'}</div>
+          </td>
+        `;
+        return channels.map((ch, idx) => {
+          const latestRecord = getLatestRecordByChannel(hotel.id, ch.channel);
+          const detailHref = buildDetailHref(hotel.id, {
+            dateFilter: ch.lastInspectionDate || '',
+            channelFilter: ch.channel || '',
+            recordId: latestRecord?.id || '',
+            date: latestRecord?.date || '',
+            channel: ch.channel || ''
+          });
+          const statusMeta = Utils.getOpsPatrolStatusMeta(ch.processingStatus);
+          const systemResultTags = buildSystemResultTags(ch);
+          const presaleCell = buildPresaleCell(ch.presalePackageTitle);
+          const processCell = (() => {
+            if (isMiddleRole && ch.processingStatus === 'pending_review') {
+              return `<button type="button" class="btn btn--outline btn--sm ops-pending-review-btn" data-review-open="${hotel.id}::${ch.channel}">待验收</button>`;
+            }
+            if (!isOpsRole) {
+              return ch.lastInspectionAt ? `<span class="tag tag--${statusMeta.tag}">${statusMeta.label}</span>` : '-';
+            }
+            if (!ch.lastInspectionAt) return '-';
+            if (ch.processingStatus === 'processing') {
+              return `<button type="button" class="btn btn--outline btn--sm ops-recovery-btn" data-recovery-open="${hotel.id}::${ch.channel}">申请恢复</button>`;
+            }
+            if (ch.processingStatus === 'pending_review') {
+              return '<span class="tag tag--warning">已申请</span>';
+            }
+            return '<span class="tag tag--success">正常</span>';
+          })();
+          const durationCell = buildDurationCell(ch);
+          const inspectionCell = buildInspectionCell(ch.lastInspectionAt);
+          const startCls = idx === 0 ? ' ops-table-group-start' : '';
+          return `
+            <tr class="ops-table-row-link${startCls}" data-href="${detailHref}">
+              ${idx === 0 ? nameCell : ''}
+              <td class="ops-table__channel">${Utils.channelLabel(ch.channel)}</td>
+              <td class="ops-table__status"><div class="ops-result-tags">${systemResultTags}</div></td>
+              <td class="ops-table__presale">${presaleCell}</td>
+              <td class="ops-table__process-result">${processCell}</td>
+              <td class="ops-table__duration">${durationCell}</td>
+              <td class="ops-table__inspect">${inspectionCell}</td>
+            </tr>
+          `;
+        }).join('');
+      }).join('');
+
+      listEl.innerHTML = `
+        <div class="ops-table-wrap">
+          <table class="ops-table">
+            <colgroup>
+              <col class="ops-table__col-hotel">
+              <col class="ops-table__col-channel">
+              <col class="ops-table__col-status">
+              <col class="ops-table__col-presale">
+              <col class="ops-table__col-process">
+              <col class="ops-table__col-duration">
+              <col class="ops-table__col-inspect">
+            </colgroup>
+            <thead>
+              <tr>
+                <th>酒店</th>
+                <th>渠道</th>
+                <th>状态</th>
+                <th>套餐</th>
+                <th>处理结果</th>
+                <th>异常时间</th>
+                <th>最近巡检</th>
+              </tr>
+            </thead>
+            <tbody>${bodyHtml}</tbody>
+          </table>
+        </div>
+      `;
+      document.getElementById('summaryText').textContent = `共 ${hotelRows.length} 家酒店 / ${totalChannelRows} 条渠道`;
+    }
+
+    function renderListOps(hotelRows) {
+      const listEl = document.getElementById('hotelList');
+      if (!hotelRows.length) {
+        listEl.innerHTML = '<div class="empty-state"><div class="empty-state__icon">🏨</div><div class="empty-state__text">暂无符合条件酒店</div></div>';
+        return;
+      }
+      listEl.innerHTML = hotelRows.map(({ hotel, summary }) => {
+        const statusMeta = Utils.getOpsPatrolStatusMeta(summary.processingStatus);
+        const resultMeta = Utils.getOpsPatrolResultMeta(summary.lastResultType);
+        const durationText = summary.isAbnormal ? `${summary.abnormalDurationHours}小时` : '-';
+        const canApply = role === 'ops' && summary.isAbnormal;
+        const applyDisabled = summary.processingStatus === 'pending_review';
+        const latestRecord = summary.lastChannel
+          ? getLatestRecordByChannel(hotel.id, summary.lastChannel)
+          : null;
+        const detailHref = buildDetailHref(hotel.id, {
+          dateFilter: summary.lastInspectionDate || '',
+          channelFilter: summary.lastChannel || '',
+          recordId: latestRecord?.id || '',
+          date: latestRecord?.date || '',
+          channel: summary.lastChannel || ''
+        });
+        return `
+          <div class="ops-patrol-item">
+            <a class="ops-hotel-item" href="${detailHref}">
+              <div class="ops-hotel-item__head">
+                <div class="ops-hotel-item__name">${hotel.name}</div>
+                <span class="tag tag--${statusMeta.tag}">${statusMeta.label}</span>
+              </div>
+              <div class="ops-hotel-item__meta">OTA渠道：${summary.lastChannel ? Utils.channelLabel(summary.lastChannel) : '-'}</div>
+              <div class="ops-hotel-item__meta">最近巡检：${summary.lastInspectionDate ? Utils.formatDate(summary.lastInspectionDate) : '-'}</div>
+              <div class="ops-hotel-item__meta">状态：<span class="text-${resultMeta.tag === 'danger' ? 'danger' : (resultMeta.tag === 'warning' ? 'warning' : 'secondary')}">${resultMeta.label}</span></div>
+              <div class="ops-hotel-item__meta">异常时间：${durationText}</div>
+            </a>
+            ${canApply ? `
+              <div class="ops-patrol-actions">
+                <button type="button" class="btn btn--outline btn--sm ops-apply-btn" data-id="${hotel.id}" ${applyDisabled ? 'disabled' : ''}>
+                  ${applyDisabled ? '已申请，待验收' : '申请异常处理完毕'}
+                </button>
+              </div>
+            ` : ''}
+          </div>
+        `;
+      }).join('');
+      document.getElementById('summaryText').textContent = `共 ${hotelRows.length} 家酒店`;
+    }
+
+    function renderRecoveryPreview() {
+      const wrap = document.getElementById('recoveryImagePreview');
+      wrap.innerHTML = recoveryImages.map((img, idx) => `
+        <div class="ops-recovery-modal__preview-item">
+          <img src="${img.url}" alt="${img.name}">
+          <button type="button" data-remove-recovery-image="${idx}" aria-label="移除">×</button>
+        </div>
+      `).join('');
+    }
+
+    function openRecoveryModal(target) {
+      recoveryTarget = target;
+      recoveryImages = [];
+      document.getElementById('recoveryContentInput').value = '';
+      document.getElementById('recoveryImageInput').value = '';
+      renderRecoveryPreview();
+      const subtitleEl = document.getElementById('recoveryModalSubtitle');
+      if (subtitleEl && target) {
+        const hotel = Utils.getOpsHotelById(target.hotelId);
+        const hotelName = hotel?.name || '';
+        const channelLabel = target.channel ? Utils.channelLabel(target.channel) : '';
+        const parts = [hotelName, channelLabel].filter(Boolean);
+        subtitleEl.textContent = parts.length ? parts.join(' · ') : '填写处理结果，提交后由中台进行验收';
+      }
+      document.getElementById('recoveryModal').style.display = 'flex';
+    }
+
+    function closeRecoveryModal() {
+      document.getElementById('recoveryModal').style.display = 'none';
+      recoveryTarget = null;
+      recoveryImages = [];
+    }
+
+    function initRoleFloat() {
+      const btn = document.getElementById('roleFloatBtn');
+      if (!btn || !isUnifiedRole) return;
+      btn.textContent = isMiddleRole ? '切运营' : '切中台';
+      const targetRole = isMiddleRole ? 'ops' : 'middle';
+      btn.addEventListener('click', () => {
+        window.location.href = getRoleSwitchHref(targetRole);
+      });
+      let isDragging = false;
+      let moved = false;
+      let offsetX = 0;
+      let offsetY = 0;
+      const setPos = (x, y) => {
+        const w = btn.offsetWidth || 56;
+        const h = btn.offsetHeight || 56;
+        const min = 8;
+        const maxX = Math.max(window.innerWidth - w - min, min);
+        const maxY = Math.max(window.innerHeight - h - min, min);
+        const clampedX = Math.min(Math.max(x, min), maxX);
+        const clampedY = Math.min(Math.max(y, min), maxY);
+        btn.style.left = `${clampedX}px`;
+        btn.style.top = `${clampedY}px`;
+      };
+      setPos(window.innerWidth - 72, window.innerHeight - 132);
+      const onMove = (clientX, clientY) => {
+        if (!isDragging) return;
+        moved = true;
+        setPos(clientX - offsetX, clientY - offsetY);
+      };
+      btn.addEventListener('pointerdown', (e) => {
+        isDragging = true;
+        moved = false;
+        const rect = btn.getBoundingClientRect();
+        offsetX = e.clientX - rect.left;
+        offsetY = e.clientY - rect.top;
+        btn.setPointerCapture(e.pointerId);
+      });
+      btn.addEventListener('pointermove', (e) => onMove(e.clientX, e.clientY));
+      btn.addEventListener('pointerup', () => {
+        isDragging = false;
+        if (moved) return;
+      });
+      window.addEventListener('resize', () => {
+        const rect = btn.getBoundingClientRect();
+        setPos(rect.left, rect.top);
+      });
+    }
+
+    // ========= 主渲染流程 =========
+    function render() {
+      let allHotels = Utils.getOpsHotels().filter((hotel) => {
+        if (isMiddleRole) return true;
+        return hotel.ownerOps === currentOps;
+      });
+      if (isMiddleRole) {
+        allHotels = pickMiddleSampleHotels(allHotels);
+      }
+      const allRows = allHotels.map(buildHotelRow);
+      renderFilters(allRows);
+
+      // scopeRows：已应用运营/省份筛选（用于概览）
+      let scopeRows = allRows;
+      if (isUnifiedRole && opsFilter.length) {
+        scopeRows = scopeRows.filter((item) => opsFilter.includes(item.hotel.ownerOps));
+      }
+      if (provinceFilter.length) {
+        scopeRows = scopeRows.filter((item) => provinceFilter.includes(item.hotel.province));
+      }
+      renderOverview(scopeRows);
+
+      // keyword 过滤
+      let rows = scopeRows;
+      if (keyword) {
+        const k = keyword.toLowerCase();
+        rows = rows.filter((item) => (item.hotel.name || '').toLowerCase().includes(k));
+      }
+
+      if (isUnifiedRole) {
+        // 按行（渠道）过滤异常筛选
+        const channelRows = rows.map(({ hotel, summary, channels }) => {
+          const filtered = channels.filter((ch) => matchesAbnormalChannel(ch));
+          return { hotel, summary, channels: filtered };
+        }).filter((r) => r.channels.length > 0);
+
+        // 排序：按酒店维度，用"每家酒店展示渠道里"的最大异常时长 / 最新巡检时间
+        channelRows.forEach((r) => {
+          r._maxDuration = Math.max(0, ...r.channels.map((c) => c.abnormalDurationHours || 0));
+          r._maxInspection = r.channels.reduce((max, c) => (c.lastInspectionAt > max ? c.lastInspectionAt : max), '');
+        });
+
+        let sorted = channelRows.slice();
+        if (sortFilter === 'duration_desc') {
+          sorted = sorted.sort((a, b) => {
+            if (b._maxDuration !== a._maxDuration) return b._maxDuration - a._maxDuration;
+            return (b._maxInspection || '').localeCompare(a._maxInspection || '');
+          });
+          // 同一酒店内，渠道也按异常时长倒序（异常时长相同再按最近巡检倒序）
+          sorted.forEach((r) => {
+            r.channels = r.channels.slice().sort((a, b) => {
+              if (b.abnormalDurationHours !== a.abnormalDurationHours) {
+                return b.abnormalDurationHours - a.abnormalDurationHours;
+              }
+              return (b.lastInspectionAt || '').localeCompare(a.lastInspectionAt || '');
+            });
+          });
+        } else {
+          sorted = sorted.sort((a, b) => (b._maxInspection || '').localeCompare(a._maxInspection || ''));
+          sorted.forEach((r) => {
+            r.channels = r.channels.slice().sort((a, b) => (b.lastInspectionAt || '').localeCompare(a.lastInspectionAt || ''));
+          });
+        }
+        if (viewMode === 'simple') {
+          renderListMiddle(sorted);
+        } else {
+          renderListMiddleCards(sorted);
+        }
+      } else {
+        // 运营角色：维持原 card 布局（酒店级）
+        let filtered = rows.filter((item) => {
+          if (!abnormalFilter.length || abnormalFilter.length === ABNORMAL_OPTIONS.length) return true;
+          return item.channels.some((ch) => matchesAbnormalChannel(ch));
+        });
+        if (sortFilter === 'duration_desc') {
+          filtered = filtered.sort((a, b) => {
+            if (b.summary.abnormalDurationHours !== a.summary.abnormalDurationHours) {
+              return b.summary.abnormalDurationHours - a.summary.abnormalDurationHours;
+            }
+            return (b.summary.lastInspectionAt || '').localeCompare(a.summary.lastInspectionAt || '');
+          });
+        } else {
+          filtered = filtered.sort((a, b) => (b.summary.lastInspectionAt || '').localeCompare(a.summary.lastInspectionAt || ''));
+        }
+        renderListOps(filtered);
+      }
+    }
+
+    // ========= 事件绑定 =========
+    document.getElementById('sortFilter').addEventListener('change', (e) => {
+      sortFilter = e.target.value;
+      render();
+    });
+    document.getElementById('viewToggle').addEventListener('click', (e) => {
+      const btn = e.target.closest('.ops-view-toggle__btn');
+      if (!btn) return;
+      const next = btn.dataset.view;
+      if (!next || next === viewMode) return;
+      viewMode = next;
+      render();
+    });
+    document.getElementById('cardCollapseAllBtn').addEventListener('click', (e) => {
+      e.preventDefault();
+      if (!visibleCardKeys.length) return;
+      const shouldCollapse = e.currentTarget.dataset.action !== 'expand';
+      visibleCardKeys.forEach((key) => {
+        if (shouldCollapse) collapsedCards.add(key);
+        else collapsedCards.delete(key);
+      });
+      render();
+    });
+    document.getElementById('recoveryCancelBtn').addEventListener('click', closeRecoveryModal);
+    document.getElementById('recoveryModalMask').addEventListener('click', closeRecoveryModal);
+    document.getElementById('reviewModalCloseBtn').addEventListener('click', closeReviewModal);
+    document.getElementById('reviewModalMask').addEventListener('click', closeReviewModal);
+    document.getElementById('reviewModalGoBtn').addEventListener('click', () => {
+      if (!reviewTargetHref) return;
+      window.location.href = reviewTargetHref;
+    });
+    document.getElementById('reviewModalImages').addEventListener('click', (e) => {
+      const previewBtn = e.target.closest('[data-preview-src]');
+      if (!previewBtn) return;
+      e.preventDefault();
+      e.stopPropagation();
+      openImagePreview(previewBtn.dataset.previewSrc);
+    });
+    document.getElementById('imageModalMask').addEventListener('click', closeImagePreview);
+    document.getElementById('imageModalClose').addEventListener('click', closeImagePreview);
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && document.getElementById('imageModal').style.display === 'flex') {
+        closeImagePreview();
+      }
+    });
+    document.getElementById('recoveryImageInput').addEventListener('change', async (e) => {
+      const files = [...(e.target.files || [])];
+      if (!files.length) return;
+      const remain = 5 - recoveryImages.length;
+      files.slice(0, Math.max(remain, 0)).forEach((file) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          recoveryImages.push({ name: file.name || '截图', url: String(reader.result || '') });
+          recoveryImages = recoveryImages.slice(0, 5);
+          renderRecoveryPreview();
+        };
+        reader.readAsDataURL(file);
+      });
+      e.target.value = '';
+    });
+    document.getElementById('recoveryImagePreview').addEventListener('click', (e) => {
+      const removeBtn = e.target.closest('[data-remove-recovery-image]');
+      if (!removeBtn) return;
+      const idx = Number(removeBtn.dataset.removeRecoveryImage);
+      if (!Number.isFinite(idx)) return;
+      recoveryImages = recoveryImages.filter((_, i) => i !== idx);
+      renderRecoveryPreview();
+    });
+    document.getElementById('recoverySubmitBtn').addEventListener('click', () => {
+      if (!recoveryTarget) return;
+      const content = String(document.getElementById('recoveryContentInput').value || '').trim();
+      if (!content) {
+        window.alert('请先填写沟通情况与处理结果');
+        return;
+      }
+      Utils.submitOpsRecoveryApply({
+        hotelId: recoveryTarget.hotelId,
+        channel: recoveryTarget.channel,
+        content,
+        images: recoveryImages,
+        submittedBy: role
+      });
+      closeRecoveryModal();
+      render();
+    });
+    let __searchDebounceTimer = null;
+    document.getElementById('hotelSearch').addEventListener('input', (e) => {
+      const val = e.target.value.trim();
+      if (__searchDebounceTimer) clearTimeout(__searchDebounceTimer);
+      __searchDebounceTimer = setTimeout(() => {
+        keyword = val;
+        render();
+      }, 200);
+    });
+    document.getElementById('hotelList').addEventListener('click', (e) => {
+      const collapseBtn = e.target.closest('[data-toggle-card]');
+      if (collapseBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        const key = String(collapseBtn.dataset.toggleCard || '').trim();
+        if (!key) return;
+        if (collapsedCards.has(key)) collapsedCards.delete(key);
+        else collapsedCards.add(key);
+        render();
+        return;
+      }
+      const reviewBtn = e.target.closest('[data-review-open]');
+      if (reviewBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        const key = String(reviewBtn.dataset.reviewOpen || '');
+        const [hotelIdRaw, channel] = key.split('::');
+        const hotelIdNum = Number(hotelIdRaw);
+        if (!hotelIdNum || !channel) return;
+        openReviewModal(hotelIdNum, channel);
+        return;
+      }
+      const recoveryOpenBtn = e.target.closest('[data-recovery-open]');
+      if (recoveryOpenBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        const key = String(recoveryOpenBtn.dataset.recoveryOpen || '');
+        const [hotelIdRaw, channel] = key.split('::');
+        const hotelIdNum = Number(hotelIdRaw);
+        if (!hotelIdNum || !channel) return;
+        openRecoveryModal({ hotelId: hotelIdNum, channel });
+        return;
+      }
+      // 酒店名点击：切换展开 / 收起，不跳详情
+      const toggleNameEl = e.target.closest('[data-toggle-name]');
+      if (toggleNameEl) {
+        const id = Number(toggleNameEl.dataset.toggleName);
+        if (expandedHotels.has(id)) expandedHotels.delete(id);
+        else expandedHotels.add(id);
+        render();
+        return;
+      }
+      // 表格其它位置点击：跳详情
+      const row = e.target.closest('.ops-table-row-link');
+      if (row && row.dataset.href) {
+        // 若点击发生在酒店名单元格内，不跳
+        if (e.target.closest('.ops-table__hotel-cell')) return;
+        window.location.href = row.dataset.href;
+        return;
+      }
+      // 运营 card 内的"申请处理完毕"按钮
+      const btn = e.target.closest('.ops-apply-btn');
+      if (!btn) return;
+      const id = Number(btn.dataset.id);
+      const updated = Utils.requestOpsPatrolResolved(id);
+      if (!updated) return;
+      render();
+    });
+
+    initRoleFloat();
+    render();
+  </script>
+</body>
+</html>

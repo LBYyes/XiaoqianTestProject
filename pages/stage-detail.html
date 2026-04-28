@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>阶段详情 - 奇趣庄园</title>
+  <link rel="stylesheet" href="../assets/css/theme.css?v=6">
+  <link rel="stylesheet" href="../assets/css/common.css?v=6">
+  <link rel="stylesheet" href="../assets/css/pages/hotel-detail.css?v=6">
+</head>
+<body>
+  <div class="app-wrapper">
+    <div id="header"></div>
+    <main class="page-content page-content--with-header" style="padding-bottom:calc(var(--tabbar-height) + var(--safe-bottom) + 72px);">
+      <div id="stageContent"></div>
+    </main>
+    <div class="action-footer action-footer--above-tabbar" id="markDoneFooter" style="display:none;">
+      <div class="btn btn--primary btn--block btn--lg" id="markDoneBtn">标记此阶段已完成</div>
+    </div>
+    <div id="tabbar"></div>
+  </div>
+
+  <script src="../assets/js/mock/hotels.js?v=5"></script>
+  <script src="../assets/js/utils.js?v=4"></script>
+  <script src="../assets/js/components/header.js?v=4"></script>
+  <script src="../assets/js/components/tabbar.js?v=4"></script>
+  <script>
+    const ADD_ICON    = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" width="22" height="22"><path d="M12 5v14M5 12h14"/></svg>`;
+    const EDIT_ICON   = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" width="20" height="20"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
+
+    const STAGE_ORDER     = ['screening', 'pitch', 'negotiate', 'contract'];
+    const STAGE_LABELS    = { screening: '意向筛选', pitch: '产品讲解', negotiate: '合作模式', contract: '合同推进' };
+    const STAGE_LABELS_MAP = STAGE_LABELS;
+
+    const hotelId = Utils.getUrlParam('id');
+    const stage   = Utils.getUrlParam('stage');
+    let hotel     = Utils.getHotelById(hotelId);
+
+    if (!hotel || !stage) {
+      document.getElementById('stageContent').innerHTML = '<div class="empty-state mt-xl"><div class="empty-state__icon">🏨</div><div class="empty-state__text">参数错误</div></div>';
+    } else {
+      const isLocked = (() => {
+        const idx = STAGE_ORDER.indexOf(stage);
+        if (idx <= 0) return false;
+        const sd = hotel.stageData || {};
+        const prev = STAGE_ORDER[idx - 1];
+        const prevDone = (() => {
+          if (prev === 'screening') return sd.screening?.completed;
+          if (prev === 'pitch')     return sd.pitch?.completed;
+          if (prev === 'negotiate') return sd.negotiate?.completed;
+          return false;
+        })();
+        return !prevDone;
+      })();
+
+      const canAdd  = !isLocked && (stage === 'pitch' || stage === 'negotiate');
+      const canEdit = !isLocked && (stage === 'screening' || stage === 'contract');
+      const actionIcon = canAdd
+        ? `<a href="stage-action.html?id=${hotelId}&stage=${stage}" style="color:var(--color-primary);display:flex;align-items:center;">${ADD_ICON}</a>`
+        : canEdit
+          ? `<a href="stage-action.html?id=${hotelId}&stage=${stage}" style="color:var(--color-primary);display:flex;align-items:center;">${EDIT_ICON}</a>`
+          : '';
+
+      Header.render('#header', {
+        title: STAGE_LABELS[stage] || '阶段详情',
+        showBack: true,
+        backHref: `hotel-detail.html?id=${hotelId}`,
+        actions: actionIcon
+      });
+      TabBar.render('#tabbar', { active: 'list' });
+
+      renderStage();
+    }
+
+    function getStatus() {
+      const sd = hotel.stageData || {};
+      if (stage === 'screening') {
+        if (sd.screening?.completed) return 'done';
+        if (sd.screening) return 'progress';  // 只要评分已保存（含全零情况），均为进行中
+        return 'empty';
+      }
+      if (stage === 'pitch') {
+        if (sd.pitch?.completed) return 'done';
+        if (sd.pitch?.sessions?.length > 0) return 'progress';
+        return 'empty';
+      }
+      if (stage === 'negotiate') {
+        if (sd.negotiate?.completed) return 'done';
+        if (sd.negotiate?.rounds?.length > 0) return 'progress';
+        return 'empty';
+      }
+      if (stage === 'contract') {
+        if (hotel.signedAt) return 'done';
+        if (hotel.stageData?.contract?.version) return 'progress';
+        return 'empty';
+      }
+      return 'empty';
+    }
+
+    function renderStage() {
+      const status = getStatus();
+
+      if (['pitch','negotiate','contract'].includes(stage)) {
+        const idx = STAGE_ORDER.indexOf(stage);
+        const sd = hotel.stageData || {};
+        const prev = STAGE_ORDER[idx - 1];
+        const prevDone = sd[prev]?.completed || false;
+        if (!prevDone) {
+          document.getElementById('stageContent').innerHTML = `
+            <div class="empty-state mt-xl">
+              <div class="empty-state__icon">🔒</div>
+              <div class="empty-state__text">请先完成「${STAGE_LABELS_MAP[prev]}」后再解锁</div>
+            </div>
+          `;
+          return;
+        }
+      }
+
+      const renderMap = {
+        screening: renderScreening,
+        pitch:     renderPitch,
+        negotiate: renderNegotiate,
+        contract:  renderContract
+      };
+      if (renderMap[stage]) renderMap[stage](status);
+
+      if (status === 'progress') {
+        document.getElementById('markDoneFooter').style.display = 'block';
+        document.getElementById('markDoneBtn').addEventListener('click', markDone);
+      } else if (status === 'done') {
+        const NEXT_LABEL = { screening: '产品讲解', pitch: '合作模式', negotiate: '合同推进', contract: '' };
+        const btn = document.getElementById('markDoneBtn');
+        btn.textContent = NEXT_LABEL[stage] ? `已完成 · 前往${NEXT_LABEL[stage]} ›` : '已完成 · 返回酒店详情';
+        btn.style.background = 'var(--color-success)';
+        document.getElementById('markDoneFooter').style.display = 'block';
+        btn.addEventListener('click', () => {
+          window.location.href = `hotel-detail.html?id=${hotelId}`;
+        });
+      }
+    }
+
+    function renderScreening(status) {
+      const sc = hotel.stageData?.screening || {};
+      let html = '';
+
+      if (status === 'empty') {
+        html = `<div class="stage-empty">暂无评分数据</div>`;
+      } else {
+        const s = sc.scores || {};
+        html = `
+          <div class="score-group-title">酒店资质（30分）</div>
+          <div class="score-row"><span class="score-row__label">地理位置匹配</span><span class="score-row__val">${s.locationMatch || 0}/10</span></div>
+          <div class="score-row"><span class="score-row__label">客流健康度</span><span class="score-row__val">${s.trafficHealth || 0}/10</span></div>
+          <div class="score-row"><span class="score-row__label">酒店档次匹配</span><span class="score-row__val">${s.hotelTierMatch || 0}/10</span></div>
+          <div class="score-group-title">决策人触达（30分）</div>
+          <div class="score-row"><span class="score-row__label">是否触达决策人</span><span class="score-row__val">${s.hasDecisionMaker || 0}/15</span></div>
+          <div class="score-row"><span class="score-row__label">是否真实联系人</span><span class="score-row__val">${s.isRealContact || 0}/15</span></div>
+          <div class="score-group-title">合作意愿（40分）</div>
+          <div class="score-row"><span class="score-row__label">合作兴趣度</span><span class="score-row__val">${s.interestLevel || 0}/20</span></div>
+          <div class="score-row"><span class="score-row__label">推进意愿</span><span class="score-row__val">${s.pushWillingness || 0}/10</span></div>
+          <div class="score-row"><span class="score-row__label">保底意愿</span><span class="score-row__val">${s.guaranteeWillingness || 0}/10</span></div>
+          <div class="score-result-card">
+            <div>
+              <div class="score-result-card__num">${sc.totalScore}</div>
+              <div class="score-result-card__sub">总分</div>
+            </div>
+            <div>
+              <span class="tag tag--${Utils.screenResultTag(sc.result)}">${Utils.screenResultShort(sc.result)}</span>
+              <div style="color:var(--text-secondary);margin-top:6px;font-size:var(--font-xs);">${Utils.screenResultLabel(sc.result)}</div>
+            </div>
+          </div>
+        `;
+      }
+      document.getElementById('stageContent').innerHTML = html;
+    }
+
+    function renderPitch(status) {
+      const sessions = hotel.stageData?.pitch?.sessions || [];
+      let html = '';
+
+      if (sessions.length === 0) {
+        html = `<div class="stage-empty">暂无讲解记录<br><span style="font-size:var(--font-xs);">点击右上角 + 添加讲解记录<br>添加后可标记此阶段完成</span></div>`;
+      } else {
+        html = sessions.map((s, i) => `
+          <a class="session-card session-card--link" href="record-detail.html?id=${hotelId}&stage=pitch&idx=${i}">
+            <div class="session-card__header">
+              <span class="session-card__title">第${i+1}次 · ${s.type || '-'}</span>
+              <span class="session-card__date">${Utils.formatDate(s.date)}</span>
+            </div>
+            <div class="session-card__body">
+              <div>参与者：${(s.hotelParticipants || []).map(p => `${p.name}(${p.position})`).join('、') || '-'}</div>
+              ${s.minutes ? `<div style="margin-top:4px;color:var(--text-secondary);">摘要：${s.minutes.length > 30 ? s.minutes.slice(0,30)+'…' : s.minutes}</div>` : ''}
+            </div>
+          </a>
+        `).join('');
+      }
+      document.getElementById('stageContent').innerHTML = html;
+    }
+
+    function renderNegotiate(status) {
+      const rounds = hotel.stageData?.negotiate?.rounds || [];
+      let html = '';
+
+      if (rounds.length === 0) {
+        html = `<div class="stage-empty">暂无谈判记录<br><span style="font-size:var(--font-xs);">点击右上角 + 添加谈判记录<br>添加后可标记此阶段完成</span></div>`;
+      } else {
+        html = rounds.map((r, i) => `
+          <a class="session-card session-card--link" href="record-detail.html?id=${hotelId}&stage=negotiate&idx=${i}">
+            <div class="session-card__header">
+              <span class="session-card__title">第${i+1}轮谈判</span>
+              <span class="session-card__date">${Utils.formatDate(r.date)}</span>
+            </div>
+            <div class="session-card__body">
+              <div>酒店方：${r.hotelParticipants || '-'} &nbsp;|&nbsp; 我方：${r.ourParticipants || '-'}</div>
+              ${r.terms?.mode ? `<div style="margin-top:4px;color:var(--color-primary-light);">模式：${r.terms.mode}</div>` : ''}
+              ${r.description ? `<div style="margin-top:4px;color:var(--text-secondary);">${r.description.length > 30 ? r.description.slice(0,30)+'…' : r.description}</div>` : ''}
+            </div>
+          </a>
+        `).join('');
+      }
+      document.getElementById('stageContent').innerHTML = html;
+    }
+
+    function renderContract(status) {
+      const ct = hotel.stageData?.contract || {};
+      let html = '';
+
+      if (status === 'empty') {
+        html = `<div class="stage-empty">暂无合同信息<br><span style="font-size:var(--font-xs);">点击右上角编辑</span></div>`;
+      } else {
+        html = `
+          <div class="contract-steps">
+            <div class="contract-step">
+              <div class="contract-step__icon ${ct.version ? 'contract-step__icon--done' : 'contract-step__icon--pending'}">${ct.version ? '✓' : '1'}</div>
+              <div><div class="contract-step__label">合同版本</div><div class="contract-step__date">${ct.version || '-'}</div></div>
+            </div>
+            <div class="contract-step">
+              <div class="contract-step__icon ${ct.reviewStatus === 'approved' ? 'contract-step__icon--done' : 'contract-step__icon--pending'}">${ct.reviewStatus === 'approved' ? '✓' : '2'}</div>
+              <div><div class="contract-step__label">法务审批</div><div class="contract-step__date">${ct.reviewStatus === 'approved' ? '已审批' : ct.reviewStatus === 'reviewing' ? '审核中' : '未开始'}</div></div>
+            </div>
+            <div class="contract-step">
+              <div class="contract-step__icon ${ct.ourSignDate ? 'contract-step__icon--done' : 'contract-step__icon--pending'}">${ct.ourSignDate ? '✓' : '3'}</div>
+              <div><div class="contract-step__label">我方签约</div><div class="contract-step__date">${ct.ourSignDate ? Utils.formatDate(ct.ourSignDate) : '未签署'}</div></div>
+            </div>
+            <div class="contract-step">
+              <div class="contract-step__icon ${ct.hotelSignDate ? 'contract-step__icon--done' : 'contract-step__icon--pending'}">${ct.hotelSignDate ? '✓' : '4'}</div>
+              <div><div class="contract-step__label">酒店签约</div><div class="contract-step__date">${ct.hotelSignDate ? Utils.formatDate(ct.hotelSignDate) : '未签署'}</div></div>
+            </div>
+          </div>
+          ${ct.finalTerms?.mode ? `<div style="font-size:var(--font-sm);font-weight:600;margin-bottom:4px;">最终商务条款</div>${renderTermsCard(ct.finalTerms)}` : ''}
+        `;
+      }
+      document.getElementById('stageContent').innerHTML = html;
+    }
+
+    function renderTermsCard(terms) {
+      if (!terms?.mode) return '';
+      let rows = [];
+      if (terms.mode === '旺季保底') rows = [['旺季保底价', terms.peakGuarantee], ['亲子房数量', (terms.rooms||'-')+'间'], ['合作期限', terms.period], ['旺季分成', terms.peakShare], ['淡季分成', terms.offShare]];
+      if (terms.mode === '全年保底') rows = [['全年保底价', terms.yearGuarantee], ['亲子房数量', (terms.rooms||'-')+'间'], ['合作期限', terms.period], ['旺季分成', terms.peakShare], ['淡季分成', terms.offShare]];
+      if (terms.mode === '买断')    rows = [['买断总价', terms.buyout], ['亲子房数量', (terms.rooms||'-')+'间'], ['合作期限', terms.period], ['旺季分成', terms.peakShare], ['淡季分成', terms.offShare]];
+      return `
+        <div class="terms-card">
+          <div class="terms-card__mode">${terms.mode}</div>
+          <div class="terms-card__grid">${rows.map(([k,v]) => `<div><span style="color:var(--text-placeholder);">${k}：</span>${v||'-'}</div>`).join('')}</div>
+        </div>
+      `;
+    }
+
+    function markDone() {
+      const hotels = Utils.getAllHotels();
+      const h = hotels.find(x => x.id === Number(hotelId));
+      if (!h) return;
+      if (!h.stageData) h.stageData = {};
+      if (!h.stageData[stage]) h.stageData[stage] = {};
+      h.stageData[stage].completed = true;
+      h.updatedAt = new Date().toISOString().split('T')[0];
+      Utils.saveHotels(hotels);
+      window.location.href = `hotel-detail.html?id=${hotelId}`;
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>月度对账录入 - 奇趣XR酒店管理平台</title>
+  <link rel="stylesheet" href="../assets/css/theme.css?v=18">
+  <link rel="stylesheet" href="../assets/css/common.css?v=18">
+  <link rel="stylesheet" href="../assets/css/pages/ops.css?v=18">
+</head>
+<body>
+  <div class="app-wrapper">
+    <div id="header"></div>
+    <main class="page-content page-content--with-header" style="padding-bottom:calc(var(--tabbar-height) + var(--safe-bottom) + 72px);">
+      <div id="hotelInfo"></div>
+      <div class="card">
+        <div class="form-group">
+          <label class="form-label form-label--required">月份</label>
+          <input id="monthKey" type="month" class="form-input">
+        </div>
+        <div class="ops-grid-2">
+          <div class="form-group">
+            <label class="form-label form-label--required">占房</label>
+            <input id="occupiedRooms" type="number" class="form-input" placeholder="请输入占房">
+          </div>
+          <div class="form-group">
+            <label class="form-label form-label--required">结算间夜</label>
+            <input id="settledNights" type="number" class="form-input" placeholder="请输入结算间夜">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label form-label--required">结算金额</label>
+          <input id="settlementAmount" type="number" class="form-input" placeholder="请输入结算金额">
+        </div>
+        <div class="ops-grid-2">
+          <div class="form-group">
+            <label class="form-label">入住率（系统计算）</label>
+            <input id="occupancyRate" class="form-input" readonly>
+          </div>
+          <div class="form-group">
+            <label class="form-label">平均单间收益（系统计算）</label>
+            <input id="avgRevenue" class="form-input" readonly>
+          </div>
+        </div>
+      </div>
+    </main>
+    <div class="action-footer action-footer--above-tabbar">
+      <button class="btn btn--primary btn--block btn--lg" id="saveBtn" type="button">保存</button>
+    </div>
+  </div>
+
+  <script src="../assets/js/mock/operations.js?v=18"></script>
+  <script src="../assets/js/utils.js?v=18"></script>
+  <script src="../assets/js/components/header.js?v=18"></script>
+  <script>
+    const role = (Utils.getUrlParam('role') || 'finance').trim();
+    const hotelId = (Utils.getUrlParam('id') || '').trim();
+    const recordMonth = (Utils.getUrlParam('recordMonth') || '').trim();
+    const hotel = Utils.getFinanceHotelById(hotelId);
+    const existing = recordMonth ? Utils.getFinanceRecordsByHotel(hotelId).find((x) => x.monthKey === recordMonth) : null;
+
+    const rangeType = (Utils.getUrlParam('rangeType') || 'month').trim();
+    const month = (Utils.getUrlParam('month') || '').trim();
+    const year = (Utils.getUrlParam('year') || '').trim();
+    const fromMonth = (Utils.getUrlParam('fromMonth') || '').trim();
+    const toMonth = (Utils.getUrlParam('toMonth') || '').trim();
+    const status = (Utils.getUrlParam('status') || 'all').trim();
+    const opsOwner = (Utils.getUrlParam('opsOwner') || 'all').trim();
+    const sales = (Utils.getUrlParam('sales') || 'all').trim();
+    const province = (Utils.getUrlParam('province') || 'all').trim();
+    const keyword = (Utils.getUrlParam('keyword') || '').trim();
+
+    const backHref = `finance-data-entry-detail.html?role=${encodeURIComponent(role)}&id=${encodeURIComponent(hotelId)}&rangeType=${encodeURIComponent(rangeType)}&month=${encodeURIComponent(month)}&year=${encodeURIComponent(year)}&fromMonth=${encodeURIComponent(fromMonth)}&toMonth=${encodeURIComponent(toMonth)}&status=${encodeURIComponent(status)}&opsOwner=${encodeURIComponent(opsOwner)}&sales=${encodeURIComponent(sales)}&province=${encodeURIComponent(province)}&keyword=${encodeURIComponent(keyword)}`;
+
+    Header.render('#header', {
+      title: existing ? '编辑月度对账' : '新增月度对账',
+      showBack: true,
+      backHref
+    });
+
+    if (!hotel) {
+      document.getElementById('hotelInfo').innerHTML = '<div class="empty-state"><div class="empty-state__icon">🏨</div><div class="empty-state__text">酒店不存在</div></div>';
+      document.getElementById('saveBtn').style.display = 'none';
+    } else {
+      document.getElementById('hotelInfo').innerHTML = `
+        <div class="ops-detail-head">
+          <div class="ops-detail-head__title">${hotel.hotelName || '-'}</div>
+          <div class="ops-hotel-item__meta">合作间数：${hotel.cooperationRooms || 0} 间 · 上线时间：${hotel.launchDate || '-'}</div>
+        </div>
+      `;
+      document.getElementById('monthKey').value = existing ? existing.monthKey : (new Date().toISOString().slice(0, 7));
+      document.getElementById('occupiedRooms').value = existing ? existing.occupiedRooms : '';
+      document.getElementById('settledNights').value = existing ? existing.settledNights : '';
+      document.getElementById('settlementAmount').value = existing ? existing.settlementAmount : '';
+      refreshComputed();
+    }
+
+    function refreshComputed() {
+      if (!hotel) return;
+      const monthKey = document.getElementById('monthKey').value;
+      const settledNights = Number(document.getElementById('settledNights').value) || 0;
+      const settlementAmount = Number(document.getElementById('settlementAmount').value) || 0;
+      const effectiveDays = Utils.getEffectiveDaysInMonth(hotel.launchDate, monthKey);
+      const occupancyRate = Utils.calcFinanceOccupancyRate(settledNights, hotel.cooperationRooms, effectiveDays);
+      const avgRevenue = Utils.calcFinanceAvgRevenue(settlementAmount, hotel.cooperationRooms);
+      document.getElementById('occupancyRate').value = `${Utils.formatPercent(occupancyRate)}（有效天数 ${effectiveDays}）`;
+      document.getElementById('avgRevenue').value = `¥${Math.round(avgRevenue)}`;
+    }
+
+    ['monthKey', 'settledNights', 'settlementAmount'].forEach((id) => {
+      document.getElementById(id).addEventListener('input', refreshComputed);
+      document.getElementById(id).addEventListener('change', refreshComputed);
+    });
+
+    document.getElementById('saveBtn').addEventListener('click', () => {
+      if (!hotel) return;
+      const monthKey = document.getElementById('monthKey').value;
+      const occupiedRooms = Number(document.getElementById('occupiedRooms').value) || 0;
+      const settledNights = Number(document.getElementById('settledNights').value) || 0;
+      const settlementAmount = Number(document.getElementById('settlementAmount').value) || 0;
+
+      if (!monthKey) return alert('请选择月份');
+      if (!occupiedRooms) return alert('请填写占房');
+      if (!settledNights) return alert('请填写结算间夜');
+      if (!settlementAmount) return alert('请填写结算金额');
+
+      Utils.upsertFinanceReconcileRecord({
+        hotelId: hotel.id,
+        monthKey,
+        occupiedRooms,
+        settledNights,
+        settlementAmount
+      });
+      window.location.href = backHref;
+    });
+  </script>
+</body>
+</html>
